@@ -1,502 +1,877 @@
-type TenantTokenResponse = {
-  code: number;
-  msg: string;
-  tenant_access_token?: string;
+"use client";
+
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+
+type Position = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  capturedAt: number;
 };
 
-export type EmployeeRecord = {
+type DeviceType = "Mobile" | "Desktop";
+
+type AttendanceGroup = string;
+
+type Employee = {
   employeeId: string;
   employeeName: string;
   department?: string;
-  mobileNumber: string;
-  leaveApprovalGroup: string;
-  active: boolean;
+  attendanceGroups?: AttendanceGroup[];
 };
 
-export type NotifyContact = {
-  name: string;
-  openId: string;
-  active: boolean;
-};
-
-export type LeaveRequestInput = {
-  employeeId: string;
+type EmployeeOption = {
   employeeName: string;
   department?: string;
-  approvalGroup: string;
-  leaveType: string;
-  startDate: string;
-  endDate: string;
-  dayType: "Full Day" | "Partial Day";
-  startTime?: string;
-  endTime?: string;
-  reason: string;
-  notifyNames: string[];
-  attachmentToken?: string;
-  submittedAt: number;
 };
 
-function baseConfig() {
-  const appToken = process.env.LARK_BASE_APP_TOKEN;
-  if (!appToken) throw new Error("Missing LARK_BASE_APP_TOKEN");
-  return { appToken };
+function formatPhilippineMobileNumber(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 10)]
+    .filter(Boolean)
+    .join(" ");
 }
 
-export async function getTenantAccessToken(): Promise<string> {
-  const appId = process.env.LARK_APP_ID;
-  const appSecret = process.env.LARK_APP_SECRET;
-  if (!appId || !appSecret) throw new Error("Missing LARK_APP_ID or LARK_APP_SECRET");
+function detectDeviceType(): DeviceType {
+  if (typeof navigator === "undefined") return "Desktop";
+  const ua = navigator.userAgent || "";
+  const mobileUa = /Android|iPhone|iPad|iPod|Mobile|IEMobile|Opera Mini/i.test(ua);
+  const touchTablet =
+    navigator.maxTouchPoints > 1 &&
+    typeof window !== "undefined" &&
+    Math.min(window.screen.width, window.screen.height) <= 1024;
+  return mobileUa || touchTablet ? "Mobile" : "Desktop";
+}
 
-  const response = await fetch(
-    "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+
+export default function Home() {
+  const [employee, setEmployee] = useState<Employee | null>(null);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [selectedName, setSelectedName] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [search, setSearch] = useState("");
+  const [attendanceType, setAttendanceType] = useState<"Check In" | "Check Out">("Check In");
+  const [selectedAttendanceGroup, setSelectedAttendanceGroup] = useState<AttendanceGroup | "">("");
+  const [position, setPosition] = useState<Position | null>(null);
+  const [deviceType, setDeviceType] = useState<DeviceType>("Desktop");
+  const [note, setNote] = useState("");
+  const [attendanceImage, setAttendanceImage] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [status, setStatus] = useState("Loading your attendance account…");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [successResult, setSuccessResult] = useState<{ type: "Check In" | "Check Out"; address: string } | null>(null);
+
+  useEffect(() => {
+    setDeviceType(detectDeviceType());
+
+    async function initialize() {
+      try {
+        const sessionResponse = await fetch("/api/auth/session", { cache: "no-store" });
+        const sessionData = await sessionResponse.json();
+
+        if (sessionData.authenticated) {
+          setEmployee(sessionData.employee);
+          const groups = (sessionData.employee?.attendanceGroups || []) as AttendanceGroup[];
+          setSelectedAttendanceGroup(groups.length === 1 ? groups[0] : "");
+          setStatus("Ready to capture your location.");
+          return;
+        }
+
+        await loadEmployeeOptions();
+        setStatus("Select your name and enter your registered mobile number once on this device.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Unable to initialize attendance.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void initialize();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+  }, [imagePreviewUrl]);
+
+  const filteredEmployees = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return employees.slice(0, 20);
+    return employees.filter((item) => item.employeeName.toLowerCase().includes(query)).slice(0, 20);
+  }, [employees, search]);
+
+  async function loadEmployeeOptions() {
+    const employeeResponse = await fetch(`/api/employees?ts=${Date.now()}`, {
       cache: "no-store",
-    },
-  );
-
-  const data = (await response.json()) as TenantTokenResponse;
-  if (!response.ok || data.code !== 0 || !data.tenant_access_token) {
-    throw new Error(`Lark token error: ${data.msg || response.statusText}`);
-  }
-  return data.tenant_access_token;
-}
-
-function parseActive(value: unknown) {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value === 1;
-  if (typeof value === "string") return ["true", "yes", "active", "1"].includes(value.toLowerCase());
-  return false;
-}
-
-function normalizeMobile(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (digits.startsWith("63") && digits.length >= 12) return digits.slice(2);
-  if (digits.startsWith("0") && digits.length >= 11) return digits.slice(1);
-  return digits;
-}
-
-async function listTableRecords(tableId: string) {
-  const token = await getTenantAccessToken();
-  const { appToken } = baseConfig();
-  const items: any[] = [];
-  let pageToken = "";
-
-  do {
-    const url = new URL(
-      `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
-    );
-    url.searchParams.set("page_size", "500");
-    if (pageToken) url.searchParams.set("page_token", pageToken);
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
     });
-    const data = await response.json();
-    if (!response.ok || data.code !== 0) {
-      throw new Error(`Lark Base read error: ${data.msg || response.statusText}`);
+    const employeeData = await employeeResponse.json();
+
+    if (!employeeResponse.ok) {
+      throw new Error(employeeData.error || "Unable to load employee list.");
     }
-    items.push(...(data.data?.items ?? []));
-    pageToken = data.data?.has_more ? String(data.data?.page_token ?? "") : "";
-  } while (pageToken);
 
-  return items;
-}
+    setEmployees(employeeData.employees || []);
+  }
 
-export async function listActiveEmployees(): Promise<EmployeeRecord[]> {
-  const tableId = process.env.LARK_EMPLOYEES_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_EMPLOYEES_TABLE_ID");
+  async function verifyIdentity(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedName) {
+      setStatus("Select your name first.");
+      return;
+    }
 
-  const items = await listTableRecords(tableId);
-  const employees: EmployeeRecord[] = [];
+    setBusy(true);
+    setStatus("Verifying your employee record…");
 
-  for (const item of items) {
-    const f = item.fields ?? {};
-    const employeeId = String(f["Employee ID"] ?? "").trim();
-    const employeeName = String(f["Full Name"] ?? "").trim();
-    const department = String(f["Department"] ?? "").trim();
-    const mobileNumber = String(f["Mobile Number"] ?? "").trim();
-    const leaveApprovalGroup = String(f["Leave Approval Group"] ?? "").trim();
-    const active = parseActive(f["Active"]);
-
-    if (employeeId && employeeName && mobileNumber && leaveApprovalGroup && active) {
-      employees.push({
-        employeeId,
-        employeeName,
-        department: department || undefined,
-        mobileNumber,
-        leaveApprovalGroup,
-        active,
+    try {
+      const response = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeName: selectedName,
+          mobileNumber: `+63${mobileNumber}`,
+        }),
       });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Verification failed.");
+
+      setEmployee(data.employee);
+      const groups = (data.employee?.attendanceGroups || []) as AttendanceGroup[];
+      setSelectedAttendanceGroup(groups.length === 1 ? groups[0] : "");
+
+      setStatus("Identity verified. Your attendance session is active on this browser.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Verification failed.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  return employees.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-}
+  async function logout() {
+    setBusy(true);
 
-export async function verifyEmployee(input: { employeeName: string; mobileNumber: string }) {
-  const employees = await listActiveEmployees();
-  const name = input.employeeName.trim().toLowerCase();
-  const mobile = normalizeMobile(input.mobileNumber);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+
+      setEmployee(null);
+      setSelectedName("");
+      setSearch("");
+      setMobileNumber("");
+      setPosition(null);
+      setSelectedAttendanceGroup("");
+      setNote("");
+      setAttendanceImage(null);
+      setImagePreviewUrl("");
+      setStatus("Loading employee list…");
+
+      // The app may have originally opened with an active session, so the
+      // employee list was never loaded. Fetch it now before showing login.
+      await loadEmployeeOptions();
+
+      setStatus("Select your name and enter your registered mobile number.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to change employee.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function returnToAttendanceForm() {
+    // Keep the signed server session and verified employee.
+    // Only clear the previous attendance form values.
+    setPosition(null);
+    setNote("");
+    setAttendanceImage(null);
+
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl("");
+    }
+
+    const groups = employee?.attendanceGroups || [];
+
+    // Keep one-group employees auto-selected.
+    // For multi-group employees, clear the previous choice so they can
+    // decide the correct Attendance Group for every Check In / Check Out.
+    setSelectedAttendanceGroup(groups.length === 1 ? groups[0] : "");
+
+    setSuccessResult(null);
+    setStatus("Ready to capture your location.");
+  }
+
+  function refreshAttendancePage() {
+    if (busy) return;
+
+    // Reset only the attendance form.
+    // Keep the currently verified employee and their loaded Attendance Groups
+    // exactly as-is so the group selector never disappears after Refresh.
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl("");
+    }
+
+    const groups = employee?.attendanceGroups || [];
+
+    setAttendanceType("Check In");
+    setPosition(null);
+    setNote("");
+    setAttendanceImage(null);
+    setSuccessResult(null);
+
+    // One group = keep it selected automatically.
+    // Multiple groups = show the selector again with a blank choice.
+    setSelectedAttendanceGroup(groups.length === 1 ? groups[0] : "");
+
+    setStatus("Attendance form refreshed. Your employee login is still active.");
+  }
+
+  async function captureLocation() {
+    setStatus(
+      deviceType === "Desktop"
+        ? "Getting your desktop browser location…"
+        : "Getting your live GPS location…",
+    );
+    setPosition(null);
+
+    if (!navigator.geolocation) {
+      setStatus("This browser does not support location services.");
+      return;
+    }
+
+    // Where supported, detect a previously blocked permission before asking
+    // the browser for GPS. iOS/Safari may not expose this permission query,
+    // so the normal geolocation request remains the fallback.
+    if (deviceType === "Mobile" && navigator.permissions?.query) {
+      try {
+        const permission = await navigator.permissions.query({
+          name: "geolocation" as PermissionName,
+        });
+
+        if (permission.state === "denied") {
+          setStatus(
+            "Location access is blocked for this site. Please allow Location for this site in your browser settings, then tap Capture Live Location again.",
+          );
+          return;
+        }
+      } catch {
+        // Continue to the normal browser geolocation request.
+      }
+    }
+
+    const savePosition = (result: GeolocationPosition) => {
+      setPosition({
+        latitude: result.coords.latitude,
+        longitude: result.coords.longitude,
+        accuracy: result.coords.accuracy,
+        // Use the moment this app receives the location. Some Android browsers
+        // return an older provider timestamp even for a newly requested fix.
+        capturedAt: Date.now(),
+      });
+
+      setStatus(
+        deviceType === "Desktop"
+          ? `Desktop location captured with ±${Math.round(result.coords.accuracy)} m accuracy.`
+          : `Live location captured with ±${Math.round(result.coords.accuracy)} m accuracy.`,
+      );
+    };
+
+    const locationErrorMessage = (error: GeolocationPositionError) => {
+      if (error.code === 1) {
+        return "Location access is blocked or unavailable. Please turn on Location and allow this site to use it, then tap Capture Live Location again.";
+      }
+      if (error.code === 2) {
+        return "Please turn on Location and allow this browser to use your location, then tap Capture Live Location again.";
+      }
+      if (error.code === 3) {
+        return "Location is taking a little longer. Keep Location on, then tap Capture Live Location again.";
+      }
+      return error.message || "Unable to get your location.";
+    };
+
+    const firstOptions: PositionOptions = {
+      enableHighAccuracy: deviceType === "Mobile",
+      timeout: deviceType === "Mobile" ? 30_000 : 25_000,
+      maximumAge: 0,
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      savePosition,
+      (firstError) => {
+        // Some Android devices need a second GPS request before they return a fix.
+        if (deviceType === "Mobile" && (firstError.code === 2 || firstError.code === 3)) {
+          setStatus("GPS is taking longer than usual. Retrying live location…");
+
+          navigator.geolocation.getCurrentPosition(
+            savePosition,
+            (secondError) => setStatus(locationErrorMessage(secondError)),
+            {
+              enableHighAccuracy: true,
+              timeout: 45_000,
+              maximumAge: 0,
+            },
+          );
+          return;
+        }
+
+        setStatus(locationErrorMessage(firstError));
+      },
+      firstOptions,
+    );
+  }
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl("");
+    }
+
+    if (!file) {
+      setAttendanceImage(null);
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setStatus("Please choose an image file.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setStatus("Attendance image must be 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    setAttendanceImage(file);
+    setImagePreviewUrl(URL.createObjectURL(file));
+  }
+
+  const mapPreviewUrl = useMemo(() => {
+    if (!position) return "";
+
+    const latitudeSpan = position.accuracy > 1000 ? 0.15 : 0.003;
+    const longitudeSpan = position.accuracy > 1000 ? 0.2 : 0.005;
+    const left = position.longitude - longitudeSpan;
+    const right = position.longitude + longitudeSpan;
+    const bottom = position.latitude - latitudeSpan;
+    const top = position.latitude + latitudeSpan;
+    const bbox = [left, bottom, right, top].map(encodeURIComponent).join("%2C");
+
+    return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${encodeURIComponent(
+      position.latitude,
+    )}%2C${encodeURIComponent(position.longitude)}`;
+  }, [position]);
+
+  const fullMapUrl = useMemo(() => {
+    if (!position) return "";
+    const zoom = position.accuracy > 5000 ? 11 : position.accuracy > 1000 ? 13 : 18;
+    return `https://www.openstreetmap.org/?mlat=${encodeURIComponent(
+      position.latitude,
+    )}&mlon=${encodeURIComponent(position.longitude)}#map=${zoom}/${position.latitude}/${position.longitude}`;
+  }, [position]);
+
+  async function submitAttendance(event: FormEvent) {
+    event.preventDefault();
+
+    if (!position) {
+      setStatus("Capture your location first.");
+      return;
+    }
+
+    const employeeGroups = employee?.attendanceGroups || [];
+    const attendanceGroup =
+      employeeGroups.length === 1 ? employeeGroups[0] : selectedAttendanceGroup;
+
+    // Do not block one-group employees if an older/stale client session is missing
+    // attendanceGroups. The server re-reads the current group from Lark on submit.
+    if (employeeGroups.length > 1 && !attendanceGroup) {
+      setStatus("Select the attendance group for this check-in/check-out.");
+      return;
+    }
+
+    setBusy(true);
+    setStatus("Saving your attendance…");
+
+    try {
+      const formData = new FormData();
+      formData.set("attendanceType", attendanceType);
+      formData.set("latitude", String(position.latitude));
+      formData.set("longitude", String(position.longitude));
+      formData.set("accuracy", String(position.accuracy));
+      formData.set("capturedAt", String(position.capturedAt));
+      formData.set("deviceType", deviceType);
+      if (attendanceGroup) {
+        formData.set("attendanceGroup", attendanceGroup);
+      }
+      formData.set("note", note.trim());
+
+      if (attendanceImage) {
+        formData.set("image", attendanceImage);
+      }
+
+      const response = await fetch("/api/attendance", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401) setEmployee(null);
+        throw new Error(data.error || "Attendance submission failed.");
+      }
+
+      setSuccessResult({
+        type: attendanceType,
+        address: data.detectedAddress,
+      });
+      setStatus(`Success: ${attendanceType} recorded.`);
+
+      setTimeout(() => {
+        returnToAttendanceForm();
+      }, 3000);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Attendance submission failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isLoginError =
+    !employee &&
+    /do not match|invalid employee|verification failed|select your name first/i.test(status);
+
+  const isIdentityVerified = /identity verified/i.test(status);
+
+  if (successResult) {
+    return (
+      <main
+        className="shell"
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: 20,
+        }}
+      >
+        <section
+          className="card"
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            textAlign: "center",
+            padding: "42px 26px",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              width: 78,
+              height: 78,
+              margin: "0 auto 20px",
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background: "#ecfdf3",
+              color: "#067647",
+              fontSize: 42,
+              fontWeight: 800,
+            }}
+          >
+            ✓
+          </div>
+
+          <div className="eyebrow">ATTENDANCE SAVED</div>
+          <h1 style={{ marginBottom: 10 }}>
+            {successResult.type === "Check In" ? "Check-In Successful" : "Check-Out Successful"}
+          </h1>
+          <p className="intro" style={{ marginBottom: 12 }}>
+            Your attendance has been successfully recorded.
+          </p>
+          <p
+            style={{
+              margin: "0 auto 18px",
+              color: "#667085",
+              fontSize: 13,
+              lineHeight: 1.5,
+              maxWidth: 420,
+            }}
+          >
+            {successResult.address}
+          </p>
+          <p
+            style={{
+              margin: 0,
+              color: "#98a2b3",
+              fontSize: 12,
+            }}
+          >
+            Returning to attendance form…
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   return (
-    employees.find(
-      (e) =>
-        e.employeeName.trim().toLowerCase() === name &&
-        normalizeMobile(e.mobileNumber) === mobile,
-    ) ?? null
+    <main className="shell">
+      <section className="card">
+        <div
+          style={{
+            display: "grid",
+            gap: 4,
+            paddingBottom: 18,
+            marginBottom: 18,
+            borderBottom: "1px solid #eef1f5",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <div className="eyebrow">LARK ATTENDANCE</div>
+
+            <button
+              type="button"
+              onClick={refreshAttendancePage}
+              disabled={busy}
+              aria-label="Refresh attendance page"
+              title="Refresh attendance form"
+              style={{
+                flex: "0 0 auto",
+                height: 34,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                padding: "0 11px",
+                border: "1px solid #b9ccff",
+                borderRadius: 8,
+                background: "#f2f6ff",
+                color: "#245bdb",
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1,
+                boxShadow: "0 1px 2px rgba(36, 91, 219, 0.08)",
+                cursor: busy ? "not-allowed" : "pointer",
+                opacity: busy ? 0.55 : 1,
+                WebkitTapHighlightColor: "transparent",
+              }}
+            >
+              <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>
+                ↻
+              </span>
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 28,
+              lineHeight: 1.2,
+              letterSpacing: "-0.02em",
+              color: "#1f2329",
+            }}
+          >
+            GPS Check-In / Check-Out
+          </h1>
+        </div>
+
+        {loading ? (
+          <p className="intro">Loading…</p>
+        ) : !employee ? (
+          <>
+            <p className="intro">
+              Verify your identity once on this device. Select your name, then enter your registered mobile number.
+            </p>
+
+            <form onSubmit={verifyIdentity}>
+              <label>
+                Search your name
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Type your name"
+                  autoComplete="name"
+                />
+              </label>
+
+              {search.trim() ? (
+                <div role="listbox" aria-label="Employee search results" style={{ display: "grid", gap: 8, marginTop: 10, marginBottom: 18 }}>
+                  {filteredEmployees.length === 0 ? (
+                    <div style={{ padding: "12px 14px", border: "1px dashed #d8dee8", borderRadius: 12, background: "#f8fafc", color: "#667085", fontSize: 13 }}>
+                      No matching employee found.
+                    </div>
+                  ) : (
+                    filteredEmployees.map((item) => {
+                      const isSelected = selectedName === item.employeeName;
+                      const initials = item.employeeName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+
+                      return (
+                        <button
+                          type="button"
+                          key={`${item.employeeName}-${item.department || ""}`}
+                          onClick={() => {
+                            setSelectedName(item.employeeName);
+                            setSearch(item.employeeName);
+                          }}
+                          aria-selected={isSelected}
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            padding: "12px 14px",
+                            border: isSelected ? "1px solid #3370ff" : "1px solid #d8dee8",
+                            borderRadius: 12,
+                            background: isSelected ? "#f2f6ff" : "#ffffff",
+                            boxShadow: isSelected ? "0 0 0 3px rgba(51, 112, 255, 0.10)" : "none",
+                            color: "#172033",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            appearance: "none",
+                            WebkitAppearance: "none",
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width: 38,
+                              height: 38,
+                              flex: "0 0 38px",
+                              display: "grid",
+                              placeItems: "center",
+                              borderRadius: "50%",
+                              background: isSelected ? "#3370ff" : "#eef3ff",
+                              color: isSelected ? "#ffffff" : "#3370ff",
+                              fontSize: 13,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {initials || "•"}
+                          </span>
+
+                          <span style={{ flex: 1, minWidth: 0, display: "grid", gap: 3 }}>
+                            <strong style={{ display: "block", fontSize: 14, lineHeight: 1.3 }}>{item.employeeName}</strong>
+                            {item.department ? (
+                              <span style={{ display: "block", color: "#667085", fontSize: 12, lineHeight: 1.3 }}>{item.department}</span>
+                            ) : null}
+                          </span>
+
+                          <span aria-hidden="true" style={{ flex: "0 0 auto", color: isSelected ? "#3370ff" : "#98a2b3", fontSize: 18, fontWeight: 700 }}>
+                            {isSelected ? "✓" : "›"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              ) : null}
+
+              <label>
+                Registered mobile number
+                <div className="phone-input">
+                  <span className="phone-prefix">+63</span>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    value={formatPhilippineMobileNumber(mobileNumber)}
+                    onChange={(event) => setMobileNumber(event.target.value.replace(/\D/g, "").slice(0, 10))}
+                    placeholder="917 123 4567"
+                    maxLength={12}
+                    required
+                    autoComplete="tel-national"
+                  />
+                </div>
+                <span className="field-hint">Enter the remaining 10 digits, beginning with 9.</span>
+              </label>
+
+              <button className="primary" type="submit" disabled={busy}>
+                {busy ? "Verifying…" : "Verify and Continue"}
+              </button>
+
+            </form>
+          </>
+        ) : (
+          <>
+            <div className="status">
+              <strong>{employee.employeeName}</strong><br />
+              {employee.employeeId}{employee.department ? ` · ${employee.department}` : ""}
+            </div>
+
+            <div
+              style={{
+                margin: "12px 0",
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: deviceType === "Desktop" ? "#fff7ed" : "#f0fdf4",
+                border: deviceType === "Desktop" ? "1px solid #fed7aa" : "1px solid #bbf7d0",
+                color: deviceType === "Desktop" ? "#9a3412" : "#166534",
+                fontSize: 13,
+                lineHeight: 1.45,
+              }}
+            >
+              <strong>Device detected: {deviceType}</strong><br />
+              {deviceType === "Desktop"
+                ? "Desktop attendance is allowed. Browser location may be approximate and will be recorded as such."
+                : "Mobile attendance uses live GPS and the normal accuracy requirement."}
+            </div>
+
+            <form onSubmit={submitAttendance}>
+              <div className="segmented" aria-label="Attendance type">
+                {(["Check In", "Check Out"] as const).map((type) => (
+                  <button type="button" key={type} className={attendanceType === type ? "active" : ""} onClick={() => setAttendanceType(type)}>
+                    {type}
+                  </button>
+                ))}
+              </div>
+
+              {(employee.attendanceGroups?.length || 0) > 1 ? (
+                <label style={{ marginTop: 14 }}>
+                  Attendance Group
+                  <select
+                    value={selectedAttendanceGroup}
+                    onChange={(event) =>
+                      setSelectedAttendanceGroup(event.target.value as AttendanceGroup)
+                    }
+                    required
+                    style={{
+                      width: "100%",
+                      marginTop: 8,
+                      padding: "12px 14px",
+                      border: "1px solid #d8dee8",
+                      borderRadius: 12,
+                      background: "#ffffff",
+                      font: "inherit",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="">Select where you are working</option>
+                    {employee.attendanceGroups?.map((group) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="field-hint">
+                    Choose the group for this specific check-in or check-out.
+                  </span>
+                </label>
+              ) : employee.attendanceGroups?.[0] ? (
+                <div style={{ margin: "12px 0", padding: "10px 12px", borderRadius: 12, background: "#f8fafc", border: "1px solid #e4e7ec", color: "#344054", fontSize: 13 }}>
+                  <strong>Attendance Group:</strong> {employee.attendanceGroups[0]}
+                </div>
+              ) : null}
+
+              <button className="secondary" type="button" onClick={captureLocation} disabled={busy}>
+                {position ? "Refresh Live Location" : "Capture Live Location"}
+              </button>
+
+              {position && mapPreviewUrl ? (
+                <section aria-label="Captured location map preview" style={{ margin: "14px 0", overflow: "hidden", border: "1px solid #d8dee8", borderRadius: 14, background: "#ffffff" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, padding: "12px 14px" }}>
+                    <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                      <strong style={{ color: "#172033", fontSize: 14 }}>Captured location</strong>
+                      <span style={{ color: "#667085", fontSize: 12 }}>GPS accuracy: ±{Math.round(position.accuracy)} meters</span>
+                      <span style={{ color: "#667085", fontSize: 12 }}>{deviceType === "Desktop" ? "Approximate Desktop Location" : "Live GPS"}</span>
+                    </div>
+
+                    <a href={fullMapUrl} target="_blank" rel="noreferrer" style={{ flexShrink: 0, color: "#3370ff", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                      View full map
+                    </a>
+                  </div>
+
+                  <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9", borderTop: "1px solid #e5e7eb", background: "#eef2f6" }}>
+                    <iframe
+                      title="Captured location"
+                      src={mapPreviewUrl}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+                    />
+                  </div>
+
+                  <div style={{ padding: "9px 14px 12px", borderTop: "1px solid #e5e7eb", color: "#667085", fontSize: 11, lineHeight: 1.45 }}>
+                    Coordinates: {position.latitude.toFixed(6)}, {position.longitude.toFixed(6)}. If the map preview does not load on your phone, your captured coordinates are still saved. Tap <strong>View full map</strong> above to open the location directly.
+                  </div>
+                </section>
+              ) : null}
+
+              <label style={{ marginTop: 14 }}>
+                Note <span style={{ color: "#98a2b3", fontWeight: 400 }}>(Optional)</span>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value.slice(0, 1000))}
+                  placeholder="Add an attendance note…"
+                  rows={3}
+                  maxLength={1000}
+                  style={{ width: "100%", marginTop: 8, padding: "12px 14px", border: "1px solid #d8dee8", borderRadius: 12, resize: "vertical", font: "inherit", boxSizing: "border-box" }}
+                />
+                <span className="field-hint">{note.length}/1000 characters</span>
+              </label>
+
+              <label style={{ marginTop: 14 }}>
+                Attendance Image <span style={{ color: "#98a2b3", fontWeight: 400 }}>(Optional)</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  style={{ marginTop: 8 }}
+                />
+                <span className="field-hint">Image file · Max 5 MB</span>
+              </label>
+
+              {imagePreviewUrl ? (
+                <div style={{ marginTop: 10, overflow: "hidden", border: "1px solid #d8dee8", borderRadius: 12, background: "#f8fafc" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imagePreviewUrl} alt="Attendance attachment preview" style={{ display: "block", width: "100%", maxHeight: 240, objectFit: "cover" }} />
+                </div>
+              ) : null}
+
+              <button className="primary" type="submit" disabled={busy || !position}>
+                {busy ? "Submitting…" : `Submit ${attendanceType}`}
+              </button>
+
+
+              <button className="secondary" type="button" onClick={logout} disabled={busy}>
+                Not you? Change employee
+              </button>
+            </form>
+          </>
+        )}
+
+        <div
+          className="status"
+          aria-live="polite"
+          role={isLoginError ? "alert" : "status"}
+          style={
+            isLoginError
+              ? { color: "#b42318", background: "#fef3f2", border: "1px solid #fecdca" }
+              : isIdentityVerified
+                ? { color: "#067647", background: "#ecfdf3", border: "1px solid #abefc6" }
+                : undefined
+          }
+        >
+          {status}
+        </div>
+
+        <p className="privacy">
+          Your verified attendance session stays signed in on this browser until you tap “Not you? Change employee” or the session expires. Your location is captured only when you tap the location button.
+        </p>
+      </section>
+    </main>
   );
-}
-
-export async function listNotifyContacts(): Promise<NotifyContact[]> {
-  const tableId = process.env.LARK_NOTIFY_CONTACTS_TABLE_ID;
-  if (!tableId) return [];
-
-  const items = await listTableRecords(tableId);
-  return items
-    .map((item) => {
-      const f = item.fields ?? {};
-      return {
-        name: String(f["Name"] ?? "").trim(),
-        openId: String(f["Open ID"] ?? "").trim(),
-        active: parseActive(f["Active"]),
-      };
-    })
-    .filter((x) => x.name && x.openId && x.active)
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export async function uploadLeaveAttachment(file: File): Promise<string> {
-  const token = await getTenantAccessToken();
-  const { appToken } = baseConfig();
-
-  const form = new FormData();
-  form.set("file_name", file.name || `leave-${Date.now()}`);
-  form.set("parent_type", "bitable_file");
-  form.set("parent_node", appToken);
-  form.set("size", String(file.size));
-  form.set("file", file, file.name || `leave-${Date.now()}`);
-
-  const response = await fetch(
-    "https://open.larksuite.com/open-apis/drive/v1/medias/upload_all",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: form,
-      cache: "no-store",
-    },
-  );
-  const data = await response.json();
-  if (!response.ok || data.code !== 0 || !data.data?.file_token) {
-    throw new Error(`Lark attachment upload error: ${data.msg || response.statusText}`);
-  }
-  return String(data.data.file_token);
-}
-
-export async function createLeaveRequest(input: LeaveRequestInput) {
-  const tableId = process.env.LARK_LEAVE_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
-
-  const token = await getTenantAccessToken();
-  const { appToken } = baseConfig();
-  const requestId = `${input.employeeId}-LV-${input.submittedAt}`;
-
-  const toManilaDateTime = (date: string, time: string) => {
-    const normalizedTime = time.length === 5 ? `${time}:00` : time;
-    return new Date(`${date}T${normalizedTime}+08:00`).getTime();
-  };
-
-  const fields: Record<string, unknown> = {
-    "Leave Request ID": requestId,
-    "Employee ID": input.employeeId,
-    "Employee Name": input.employeeName,
-    "Department": input.department || "",
-    "Approval Group": input.approvalGroup,
-    "Leave Type": input.leaveType,
-    "Start Date": new Date(`${input.startDate}T00:00:00+08:00`).getTime(),
-    "End Date": new Date(`${input.endDate}T00:00:00+08:00`).getTime(),
-    "Day Type": input.dayType,
-    "Reason": input.reason,
-    "Status": "Pending",
-    "Submitted At": input.submittedAt,
-    "Rejection Reason": "",
-  };
-
-  // Lark Date/DateTime fields must receive millisecond timestamps.
-  // Do not send blank strings to Start Time / End Time for Full Day leave.
-  if (input.dayType === "Partial Day" && input.startTime && input.endTime) {
-    fields["Start Time"] = toManilaDateTime(input.startDate, input.startTime);
-    fields["End Time"] = toManilaDateTime(input.endDate, input.endTime);
-  }
-
-  if (input.attachmentToken) {
-    fields["Attachment"] = [{ file_token: input.attachmentToken }];
-  }
-
-  const response = await fetch(
-    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({ fields }),
-      cache: "no-store",
-    },
-  );
-  const data = await response.json();
-  if (!response.ok || data.code !== 0) {
-    throw new Error(`Lark leave create error: ${data.msg || response.statusText}`);
-  }
-
-  return {
-    recordId: String(data.data?.record?.record_id ?? ""),
-    requestId,
-  };
-}
-
-function webhookFor(group: string) {
-  const key = group.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-  const value = process.env[`LARK_LEAVE_WEBHOOK_${key}`];
-  if (!value) throw new Error(`Missing leave webhook for approval group: ${group}`);
-  return value;
-}
-
-function multiUrl(url: string) {
-  return { url, android_url: url, ios_url: url, pc_url: url };
-}
-
-export async function sendLeaveApprovalCard(
-  input: LeaveRequestInput & { recordId: string; requestId: string; reviewToken: string },
-) {
-  const baseUrl = process.env.APP_PUBLIC_URL;
-  if (!baseUrl) throw new Error("Missing APP_PUBLIC_URL");
-
-  const approveUrl = `${baseUrl}/review/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=approve`;
-  const rejectUrl = `${baseUrl}/review/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=reject`;
-  const webhook = webhookFor(input.approvalGroup);
-
-  const card = {
-    config: { wide_screen_mode: true, enable_forward: true },
-    header: {
-      template: "blue",
-      title: { tag: "plain_text", content: `${input.employeeName} — Leave Request` },
-    },
-    elements: [
-      {
-        tag: "div",
-        text: {
-          tag: "lark_md",
-          content: `**${input.employeeName}'s Leave**\nEmployee ID: ${input.employeeId}\nDepartment: ${input.department || "—"}\nApproval Group: ${input.approvalGroup}`,
-        },
-      },
-      {
-        tag: "div",
-        fields: [
-          { is_short: true, text: { tag: "lark_md", content: `**Leave Type**\n${input.leaveType}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**Day Type**\n${input.dayType}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**Start**\n${input.startDate}${input.startTime ? ` ${input.startTime}` : ""}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**End**\n${input.endDate}${input.endTime ? ` ${input.endTime}` : ""}` } },
-        ],
-      },
-      { tag: "hr" },
-      {
-        tag: "div",
-        text: { tag: "lark_md", content: `**Reason for leave**\n${input.reason}` },
-      },
-      ...(input.notifyNames.length
-        ? [{
-            tag: "div",
-            text: { tag: "lark_md", content: `**Notify**\n${input.notifyNames.join(", ")}` },
-          }]
-        : []),
-      {
-        tag: "action",
-        actions: [
-          {
-            tag: "button",
-            type: "primary",
-            text: { tag: "plain_text", content: "Approve" },
-            multi_url: multiUrl(approveUrl),
-          },
-          {
-            tag: "button",
-            type: "danger",
-            text: { tag: "plain_text", content: "Reject" },
-            multi_url: multiUrl(rejectUrl),
-          },
-        ],
-      },
-      {
-        tag: "note",
-        elements: [
-          { tag: "plain_text", content: `Request ${input.requestId} • Pending approval` },
-        ],
-      },
-    ],
-  };
-
-  const response = await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
-    cache: "no-store",
-  });
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(`Leave group webhook error: ${response.status} ${responseText}`);
-  }
-}
-
-export async function sendDirectNotifyMessage(openId: string, text: string) {
-  const token = await getTenantAccessToken();
-  const url = new URL("https://open.larksuite.com/open-apis/im/v1/messages");
-  url.searchParams.set("receive_id_type", "open_id");
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({
-      receive_id: openId,
-      msg_type: "text",
-      content: JSON.stringify({ text }),
-    }),
-    cache: "no-store",
-  });
-  const data = await response.json();
-  if (!response.ok || data.code !== 0) {
-    throw new Error(`Direct notify failed: ${data.msg || response.statusText}`);
-  }
-}
-
-export async function getLeaveRecord(recordId: string) {
-  const tableId = process.env.LARK_LEAVE_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
-  const token = await getTenantAccessToken();
-  const { appToken } = baseConfig();
-
-  const response = await fetch(
-    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${recordId}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    },
-  );
-  const data = await response.json();
-  if (!response.ok || data.code !== 0) {
-    throw new Error(`Lark leave read error: ${data.msg || response.statusText}`);
-  }
-  return data.data?.record;
-}
-
-export async function verifyApprover(input: {
-  name: string;
-  mobileNumber: string;
-  approvalGroup: string;
-}) {
-  const tableId = process.env.LARK_LEAVE_APPROVERS_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_LEAVE_APPROVERS_TABLE_ID");
-  const items = await listTableRecords(tableId);
-  const name = input.name.trim().toLowerCase();
-  const mobile = normalizeMobile(input.mobileNumber);
-
-  for (const item of items) {
-    const f = item.fields ?? {};
-    const groupsRaw = f["Approval Group"];
-    const groups = Array.isArray(groupsRaw)
-      ? groupsRaw.map((x: unknown) => String(x).trim())
-      : String(groupsRaw ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-
-    if (
-      parseActive(f["Active"]) &&
-      String(f["Name"] ?? "").trim().toLowerCase() === name &&
-      normalizeMobile(String(f["Mobile Number"] ?? "")) === mobile &&
-      groups.includes(input.approvalGroup)
-    ) {
-      return { name: String(f["Name"]).trim() };
-    }
-  }
-  return null;
-}
-
-export async function updateLeaveDecision(input: {
-  recordId: string;
-  decision: "Approved" | "Rejected";
-  approverName: string;
-  rejectionReason?: string;
-}) {
-  const tableId = process.env.LARK_LEAVE_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
-  const token = await getTenantAccessToken();
-  const { appToken } = baseConfig();
-
-  const fields: Record<string, unknown> = {
-    Status: input.decision,
-    "Approved By": input.approverName,
-    "Approved At": Date.now(),
-    "Rejection Reason": input.decision === "Rejected" ? input.rejectionReason || "" : "",
-  };
-
-  const response = await fetch(
-    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${input.recordId}`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify({ fields }),
-      cache: "no-store",
-    },
-  );
-  const data = await response.json();
-  if (!response.ok || data.code !== 0) {
-    throw new Error(`Lark leave update error: ${data.msg || response.statusText}`);
-  }
-}
-
-export async function sendDecisionCard(input: {
-  approvalGroup: string;
-  employeeName: string;
-  leaveType: string;
-  decision: "Approved" | "Rejected";
-  approverName: string;
-  rejectionReason?: string;
-}) {
-  const webhook = webhookFor(input.approvalGroup);
-  const approved = input.decision === "Approved";
-  const card = {
-    config: { wide_screen_mode: true },
-    header: {
-      template: approved ? "green" : "red",
-      title: {
-        tag: "plain_text",
-        content: `${input.employeeName} — Leave ${input.decision}`,
-      },
-    },
-    elements: [
-      {
-        tag: "div",
-        text: {
-          tag: "lark_md",
-          content:
-            `**${input.leaveType}**\nStatus: **${input.decision}**\nProcessed by: ${input.approverName}` +
-            (!approved && input.rejectionReason ? `\nReason: ${input.rejectionReason}` : ""),
-        },
-      },
-    ],
-  };
-  await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
-    cache: "no-store",
-  });
 }
