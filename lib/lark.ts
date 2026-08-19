@@ -204,6 +204,11 @@ export async function createLeaveRequest(input: LeaveRequestInput) {
   const { appToken } = baseConfig();
   const requestId = `${input.employeeId}-LV-${input.submittedAt}`;
 
+  const toManilaDateTime = (date: string, time: string) => {
+    const normalizedTime = time.length === 5 ? `${time}:00` : time;
+    return new Date(`${date}T${normalizedTime}+08:00`).getTime();
+  };
+
   const fields: Record<string, unknown> = {
     "Leave Request ID": requestId,
     "Employee ID": input.employeeId,
@@ -214,16 +219,18 @@ export async function createLeaveRequest(input: LeaveRequestInput) {
     "Start Date": new Date(`${input.startDate}T00:00:00+08:00`).getTime(),
     "End Date": new Date(`${input.endDate}T00:00:00+08:00`).getTime(),
     "Day Type": input.dayType,
-    "Start Time": input.startTime || "",
-    "End Time": input.endTime || "",
     "Reason": input.reason,
-    "Notify": input.notifyNames,
     "Status": "Pending",
     "Submitted At": input.submittedAt,
-    "Approved By": "",
-    "Approved At": null,
     "Rejection Reason": "",
   };
+
+  // Lark Date/DateTime fields must receive millisecond timestamps.
+  // Do not send blank strings to Start Time / End Time for Full Day leave.
+  if (input.dayType === "Partial Day" && input.startTime && input.endTime) {
+    fields["Start Time"] = toManilaDateTime(input.startDate, input.startTime);
+    fields["End Time"] = toManilaDateTime(input.endDate, input.endTime);
+  }
 
   if (input.attachmentToken) {
     fields["Attachment"] = [{ file_token: input.attachmentToken }];
