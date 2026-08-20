@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getLeaveRecord,
-  sendDecisionCard,
   updateLeaveDecision,
-  verifyApprover,
 } from "@/lib/lark";
 import { verifyReviewToken } from "@/lib/reviewToken";
 
@@ -96,21 +94,6 @@ export async function POST(
       );
     }
 
-    const approvalGroup = text(f["Approval Group"]);
-
-    const approver = await verifyApprover({
-      name: text(body.approverName),
-      mobileNumber: text(body.mobileNumber),
-      approvalGroup,
-    });
-
-    if (!approver) {
-      return NextResponse.json(
-        { error: "Approver details are not authorized for this approval group." },
-        { status: 403 },
-      );
-    }
-
     const rejectionReason = text(body.rejectionReason);
 
     if (decision === "Rejected" && rejectionReason.length < 2) {
@@ -123,23 +106,13 @@ export async function POST(
     await updateLeaveDecision({
       recordId: params.recordId,
       decision,
-      approverName: approver.name,
-      rejectionReason,
-    });
-
-    await sendDecisionCard({
-      approvalGroup,
-      employeeName: text(f["Employee Name"]),
-      leaveType: text(f["Leave Type"]),
-      decision,
-      approverName: approver.name,
+      approverName: "Approval Group",
       rejectionReason,
     });
 
     return NextResponse.json({
       ok: true,
       decision,
-      approverName: approver.name,
     });
   } catch (error) {
     return NextResponse.json(
