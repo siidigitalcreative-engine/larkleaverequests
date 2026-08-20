@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getLeaveRecord,
+  sendDecisionCard,
   updateLeaveDecision,
 } from "@/lib/lark";
 import { verifyReviewToken } from "@/lib/reviewToken";
@@ -9,6 +10,18 @@ export const runtime = "nodejs";
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function dateText(value: unknown) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 export async function GET(
@@ -107,6 +120,20 @@ export async function POST(
       recordId: params.recordId,
       decision,
       approverName: "Approval Group",
+      rejectionReason,
+    });
+
+    // Post a new final-status card to the same approval group.
+    // The original webhook card cannot be edited, so this gives the group
+    // a clear visible Approved/Rejected result with no action buttons.
+    await sendDecisionCard({
+      approvalGroup: text(f["Approval Group"]),
+      employeeName: text(f["Employee Name"]),
+      requestId: text(f["Leave Request ID"]),
+      leaveType: text(f["Leave Type"]),
+      startDate: dateText(f["Start Date"]),
+      endDate: dateText(f["End Date"]),
+      decision,
       rejectionReason,
     });
 
