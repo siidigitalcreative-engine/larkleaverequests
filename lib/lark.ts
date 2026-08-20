@@ -517,11 +517,14 @@ export async function createApprovalGroupRecord(
     destination.tableId,
   );
 
-  const existingFieldNames = new Set(
-    tableFields.map((field: any) =>
+  const fieldsByName = new Map(
+    tableFields.map((field: any) => [
       String(field?.field_name ?? "").trim(),
-    ),
+      field,
+    ]),
   );
+
+  const existingFieldNames = new Set(fieldsByName.keys());
 
   const toManilaDateTime = (date: string, time: string) => {
     const normalizedTime = time.length === 5 ? `${time}:00` : time;
@@ -574,13 +577,76 @@ export async function createApprovalGroupRecord(
     }
   }
 
+  const skippedFields: string[] = [];
+
+  function canWriteField(fieldName: string, value: unknown) {
+    const field = fieldsByName.get(fieldName);
+
+    if (!field) {
+      skippedFields.push(`${fieldName}: field does not exist`);
+      return false;
+    }
+
+    if (value === undefined || value === null) {
+      skippedFields.push(`${fieldName}: empty value`);
+      return false;
+    }
+
+    const fieldType = Number(field?.type);
+
+    // Single select / multi select:
+    // only write values that already exist as options in the destination table.
+    // This avoids the entire record creation failing because one approval table
+    // is missing an option such as "Full Day".
+    if (fieldType === 3 || fieldType === 4) {
+      const optionNames = new Set(
+        (field?.property?.options ?? []).map((option: any) =>
+          String(option?.name ?? "").trim(),
+        ),
+      );
+
+      if (fieldType === 3) {
+        const wanted = String(value ?? "").trim();
+        if (!optionNames.has(wanted)) {
+          skippedFields.push(
+            `${fieldName}: option "${wanted}" does not exist in destination table`,
+          );
+          return false;
+        }
+      }
+
+      if (fieldType === 4 && Array.isArray(value)) {
+        const wanted = value.map((item) => String(item).trim());
+        if (wanted.some((item) => !optionNames.has(item))) {
+          skippedFields.push(
+            `${fieldName}: one or more multi-select options do not exist`,
+          );
+          return false;
+        }
+      }
+    }
+
+    // Computed / system fields should never be written directly.
+    if ([19, 20, 1001, 1002, 1003, 1004, 1005].includes(fieldType)) {
+      skippedFields.push(`${fieldName}: read-only/computed field`);
+      return false;
+    }
+
+    return true;
+  }
+
   const fields = Object.fromEntries(
-    Object.entries(candidateFields).filter(([fieldName, value]) => {
-      if (!existingFieldNames.has(fieldName)) return false;
-      if (value === undefined || value === null) return false;
-      return true;
-    }),
+    Object.entries(candidateFields).filter(([fieldName, value]) =>
+      canWriteField(fieldName, value),
+    ),
   );
+
+  // Leave Request ID is the primary linkage field and should always be writable.
+  if (!fields["Leave Request ID"]) {
+    throw new Error(
+      `Approval table "${input.approvalGroup}" is missing a writable "Leave Request ID" field.`,
+    );
+  }
 
   const response = await fetch(
     `https://open.larksuite.com/open-apis/bitable/v1/apps/${destination.appToken}/tables/${destination.tableId}/records`,
@@ -609,6 +675,7 @@ export async function createApprovalGroupRecord(
     created: true as const,
     tableId: destination.tableId,
     recordId: String(data.data?.record?.record_id ?? ""),
+    skippedFields,
   };
 }
 
@@ -839,6 +906,139 @@ export async function verifyApprover(input: {
     }
   }
   return null;
+}
+
+
+export async function updateApprovalGroupDecision(input: {
+  approvalGroup: string;
+  mainRecordId: string;
+  requestId: string;
+  decision: "Approved" | "Rejected";
+  rejectionReason?: string;
+}) {
+  const destination = await approvalDestinationFor(input.approvalGroup);
+
+  if (!destination) {
+    throw new Error(
+      `No approval table found for group: ${input.approvalGroup}.`,
+    );
+  }
+
+  const token = await getTenantAccessToken();
+
+  // Find the copied approval record using Main Record ID first.
+  // Fall back to Leave Request ID so older copied records can still be updated.
+  const url = new URL(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${destination.appToken}/tables/${destination.tableId}/records`,
+  );
+  url.searchParams.set("page_size", "500");
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark approval table read error: ${data.msg || response.statusText}`,
+    );
+  }
+
+  const items = data.data?.items ?? [];
+
+  const approvalRecord =
+    items.find(
+      (item: any) =>
+        String(item?.fields?.["Main Record ID"] ?? "").trim() ===
+        input.mainRecordId.trim(),
+    ) ??
+    items.find(
+      (item: any) =>
+        String(item?.fields?.["Leave Request ID"] ?? "").trim() ===
+        input.requestId.trim(),
+    );
+
+  if (!approvalRecord?.record_id) {
+    throw new Error(
+      `Approval record not found for request ${input.requestId}.`,
+    );
+  }
+
+  const tableFields = await listTableFieldsFor(
+    destination.appToken,
+    destination.tableId,
+  );
+
+  const existingFieldNames = new Set(
+    tableFields.map((field: any) =>
+      String(field?.field_name ?? "").trim(),
+    ),
+  );
+
+  const fields: Record<string, unknown> = {};
+
+  // Support either "Decision" or "Status" in approval tables.
+  if (existingFieldNames.has("Decision")) {
+    fields["Decision"] = input.decision;
+  }
+
+  if (existingFieldNames.has("Status")) {
+    fields["Status"] = input.decision;
+  }
+
+  if (existingFieldNames.has("Rejection Reason")) {
+    fields["Rejection Reason"] =
+      input.decision === "Rejected"
+        ? input.rejectionReason || ""
+        : "";
+  }
+
+  if (existingFieldNames.has("Processed At")) {
+    fields["Processed At"] = Date.now();
+  }
+
+  if (existingFieldNames.has("Sync Status")) {
+    fields["Sync Status"] = "Synced";
+  }
+
+  if (!Object.keys(fields).length) {
+    throw new Error(
+      `Approval table for ${input.approvalGroup} has no writable Decision/Status field.`,
+    );
+  }
+
+  const updateResponse = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${destination.appToken}/tables/${destination.tableId}/records/${approvalRecord.record_id}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields }),
+      cache: "no-store",
+    },
+  );
+
+  const updateData = await updateResponse.json();
+
+  if (!updateResponse.ok || updateData.code !== 0) {
+    throw new Error(
+      `Lark approval table decision update error: ${
+        updateData.msg || updateResponse.statusText
+      }`,
+    );
+  }
+
+  return {
+    ok: true,
+    approvalRecordId: String(approvalRecord.record_id),
+    tableId: destination.tableId,
+  };
 }
 
 export async function updateLeaveDecision(input: {
