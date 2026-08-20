@@ -504,15 +504,18 @@ export async function updateLeaveDecision(input: {
 export async function sendDecisionCard(input: {
   approvalGroup: string;
   employeeName: string;
+  requestId: string;
   leaveType: string;
+  startDate?: string;
+  endDate?: string;
   decision: "Approved" | "Rejected";
-  approverName: string;
   rejectionReason?: string;
 }) {
   const webhook = webhookFor(input.approvalGroup);
   const approved = input.decision === "Approved";
+
   const card = {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: true, enable_forward: true },
     header: {
       template: approved ? "green" : "red",
       title: {
@@ -526,16 +529,47 @@ export async function sendDecisionCard(input: {
         text: {
           tag: "lark_md",
           content:
-            `**${input.leaveType}**\nStatus: **${input.decision}**\nProcessed by: ${input.approverName}` +
-            (!approved && input.rejectionReason ? `\nReason: ${input.rejectionReason}` : ""),
+            `**${input.employeeName}'s Leave**\n` +
+            `Leave Type: ${input.leaveType}\n` +
+            (input.startDate && input.endDate
+              ? `Date: ${input.startDate}${input.startDate !== input.endDate ? ` to ${input.endDate}` : ""}\n`
+              : "") +
+            `Status: **${input.decision}**` +
+            (!approved && input.rejectionReason
+              ? `\nRejection Reason: ${input.rejectionReason}`
+              : ""),
         },
+      },
+      {
+        tag: "note",
+        elements: [
+          {
+            tag: "plain_text",
+            content: `Request ${input.requestId} • ${input.decision}`,
+          },
+        ],
       },
     ],
   };
-  await fetch(webhook, {
+
+  const response = await fetch(webhook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ msg_type: "interactive", card }),
     cache: "no-store",
   });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Leave decision webhook error: ${response.status} ${responseText}`);
+  }
+
+  try {
+    const data = JSON.parse(responseText) as { code?: number; msg?: string };
+    if (typeof data.code === "number" && data.code !== 0) {
+      throw new Error(`Leave decision webhook error: ${data.msg || data.code}`);
+    }
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
 }
