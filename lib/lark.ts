@@ -249,46 +249,168 @@ type ApprovalDestinationConfig =
       appToken?: string;
     };
 
-function approvalDestinationFor(group: string): ApprovalDestination | null {
-  const raw = process.env.LARK_LEAVE_APPROVAL_TABLES;
-  if (!raw?.trim()) return null;
+async function listBaseTables(appToken: string) {
+  const token = await getTenantAccessToken();
+  const items: any[] = [];
+  let pageToken = "";
 
-  let config: Record<string, ApprovalDestinationConfig>;
-
-  try {
-    config = JSON.parse(raw) as Record<string, ApprovalDestinationConfig>;
-  } catch {
-    throw new Error(
-      "LARK_LEAVE_APPROVAL_TABLES must be valid JSON.",
+  do {
+    const url = new URL(
+      `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables`,
     );
+    url.searchParams.set("page_size", "100");
+    if (pageToken) url.searchParams.set("page_token", pageToken);
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || data.code !== 0) {
+      throw new Error(
+        `Lark Base table-list error: ${data.msg || response.statusText}`,
+      );
+    }
+
+    items.push(...(data.data?.items ?? []));
+    pageToken = data.data?.has_more
+      ? String(data.data?.page_token ?? "")
+      : "";
+  } while (pageToken);
+
+  return items;
+}
+
+function normalizeTableName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Approval table routing:
+ *
+ * 1. If LARK_LEAVE_APPROVAL_TABLES contains the group, use that explicit mapping.
+ * 2. Otherwise automatically discover a table in the SAME Base by name.
+ *
+ * Recommended table name:
+ *   "<Approval Group> Leave Approvals"
+ *
+ * Example:
+ *   Digital Creative -> "Digital Creative Leave Approvals"
+ *
+ * This means you can create more approval tables later without adding a new
+ * environment variable for every table.
+ */
+async function approvalDestinationFor(
+  group: string,
+): Promise<ApprovalDestination | null> {
+  const defaultAppToken = baseConfig().appToken;
+  const raw = process.env.LARK_LEAVE_APPROVAL_TABLES;
+
+  // Optional explicit overrides remain supported.
+  if (raw?.trim()) {
+    let config: Record<string, ApprovalDestinationConfig>;
+
+    try {
+      config = JSON.parse(raw) as Record<string, ApprovalDestinationConfig>;
+    } catch {
+      throw new Error(
+        "LARK_LEAVE_APPROVAL_TABLES must be valid JSON.",
+      );
+    }
+
+    const wanted = group.trim().toLowerCase();
+    const matchedKey = Object.keys(config).find(
+      (key) => key.trim().toLowerCase() === wanted,
+    );
+
+    if (matchedKey) {
+      const value = config[matchedKey];
+
+      if (typeof value === "string") {
+        const tableId = value.trim();
+        if (tableId) {
+          return {
+            appToken: defaultAppToken,
+            tableId,
+          };
+        }
+      } else {
+        const tableId = String(value?.tableId ?? "").trim();
+
+        if (tableId) {
+          return {
+            appToken:
+              String(value?.appToken ?? "").trim() || defaultAppToken,
+            tableId,
+          };
+        }
+      }
+    }
   }
 
-  const wanted = group.trim().toLowerCase();
-  const matchedKey = Object.keys(config).find(
-    (key) => key.trim().toLowerCase() === wanted,
+  // No explicit mapping: automatically locate the table by its name.
+  const tables = await listBaseTables(defaultAppToken);
+
+  const groupName = normalizeTableName(group);
+
+  const acceptedNames = new Set([
+    normalizeTableName(`${group} Leave Approvals`),
+    normalizeTableName(`${group} Leave Approval`),
+    normalizeTableName(`${group} Leave Requests`),
+    normalizeTableName(`${group} Leave Request`),
+  ]);
+
+  const exactMatches = tables.filter((table: any) =>
+    acceptedNames.has(
+      normalizeTableName(
+        String(table?.name ?? table?.table_name ?? ""),
+      ),
+    ),
   );
 
-  if (!matchedKey) return null;
-
-  const value = config[matchedKey];
-
-  if (typeof value === "string") {
-    const tableId = value.trim();
-    if (!tableId) return null;
-
+  if (exactMatches.length === 1) {
     return {
-      appToken: baseConfig().appToken,
-      tableId,
+      appToken: defaultAppToken,
+      tableId: String(
+        exactMatches[0]?.table_id ?? exactMatches[0]?.tableId ?? "",
+      ).trim(),
     };
   }
 
-  const tableId = String(value?.tableId ?? "").trim();
-  if (!tableId) return null;
+  // Fallback: allow one unambiguous table whose name starts with the group
+  // and contains "leave".
+  const fallbackMatches = tables.filter((table: any) => {
+    const name = normalizeTableName(
+      String(table?.name ?? table?.table_name ?? ""),
+    );
 
-  return {
-    appToken: String(value?.appToken ?? "").trim() || baseConfig().appToken,
-    tableId,
-  };
+    return name.startsWith(groupName) && name.includes("leave");
+  });
+
+  if (fallbackMatches.length === 1) {
+    return {
+      appToken: defaultAppToken,
+      tableId: String(
+        fallbackMatches[0]?.table_id ?? fallbackMatches[0]?.tableId ?? "",
+      ).trim(),
+    };
+  }
+
+  if (fallbackMatches.length > 1 || exactMatches.length > 1) {
+    throw new Error(
+      `More than one approval table matches approval group "${group}". ` +
+        `Rename the intended table to "${group} Leave Approvals" or add an explicit mapping in LARK_LEAVE_APPROVAL_TABLES.`,
+    );
+  }
+
+  return null;
 }
 
 async function listTableFieldsFor(appToken: string, tableId: string) {
@@ -380,12 +502,12 @@ export async function createApprovalGroupRecord(
     requestId: string;
   },
 ) {
-  const destination = approvalDestinationFor(input.approvalGroup);
+  const destination = await approvalDestinationFor(input.approvalGroup);
 
   if (!destination) {
     return {
       created: false as const,
-      reason: `No approval table configured for group: ${input.approvalGroup}`,
+      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Leave Approvals" or add it to LARK_LEAVE_APPROVAL_TABLES.`,
     };
   }
 
