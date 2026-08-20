@@ -12,16 +12,6 @@ type Employee = {
 type PublicEmployee = { employeeName: string; department: string };
 type NotifyContact = { name: string };
 
-const LEAVE_TYPES = [
-  "Vacation Leave",
-  "Sick Leave",
-  "Emergency Leave",
-  "Bereavement Leave",
-  "Maternity / Paternity Leave",
-  "Solo Parent Leave",
-  "Service Incentive Leave",
-  "Other",
-];
 
 function mobileDisplay(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -35,11 +25,12 @@ export default function Home() {
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<PublicEmployee[]>([]);
   const [contacts, setContacts] = useState<NotifyContact[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<string[]>([]);
 
   const [employeeName, setEmployeeName] = useState("");
   const [mobile, setMobile] = useState("");
 
-  const [leaveType, setLeaveType] = useState("Vacation Leave");
+  const [leaveType, setLeaveType] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [dayType, setDayType] = useState<"Full Day" | "Partial Day">("Full Day");
@@ -56,14 +47,27 @@ export default function Home() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/auth/session").then((r) => r.json()),
-      fetch("/api/employees").then((r) => r.json()),
-      fetch("/api/notify-contacts").then((r) => r.json()),
+      fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/employees", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/notify-contacts", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/leave-options", { cache: "no-store" }).then((r) => r.json()),
     ])
-      .then(([session, employeeData, contactData]) => {
+      .then(([session, employeeData, contactData, leaveOptionsData]) => {
         if (session.authenticated) setEmployee(session.employee);
         setEmployees(employeeData.employees || []);
         setContacts(contactData.contacts || []);
+
+        const options = Array.isArray(leaveOptionsData.leaveTypes)
+          ? leaveOptionsData.leaveTypes.filter(
+              (value: unknown): value is string =>
+                typeof value === "string" && value.trim().length > 0,
+            )
+          : [];
+
+        setLeaveTypes(options);
+        setLeaveType((current) =>
+          current && options.includes(current) ? current : options[0] || "",
+        );
       })
       .finally(() => setLoading(false));
   }, []);
@@ -120,6 +124,10 @@ export default function Home() {
     setStatus("");
 
     try {
+      if (!leaveType) {
+        throw new Error("No Leave Type options are currently available in Lark Base.");
+      }
+
       const form = new FormData();
       form.set("leaveType", leaveType);
       form.set("startDate", startDate);
@@ -334,10 +342,18 @@ export default function Home() {
                   className="select"
                   value={leaveType}
                   onChange={(e) => setLeaveType(e.target.value)}
+                  required
+                  disabled={leaveTypes.length === 0}
                 >
-                  {LEAVE_TYPES.map((x) => (
-                    <option key={x}>{x}</option>
-                  ))}
+                  {leaveTypes.length === 0 ? (
+                    <option value="">No leave types available</option>
+                  ) : (
+                    leaveTypes.map((x) => (
+                      <option key={x} value={x}>
+                        {x}
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
 
