@@ -298,29 +298,21 @@ export async function createLeaveRequest(input: LeaveRequestInput) {
   };
 }
 
-function webhookFor(group: string) {
+function leaveChatIdFor(group: string) {
   const key = group.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-  const value = process.env[`LARK_LEAVE_WEBHOOK_${key}`];
-  if (!value) throw new Error(`Missing leave webhook for approval group: ${group}`);
+  const value = process.env[`LARK_LEAVE_CHAT_${key}`];
+  if (!value) throw new Error(`Missing leave chat ID for approval group: ${group}`);
   return value;
 }
 
-function multiUrl(url: string) {
-  return { url, android_url: url, ios_url: url, pc_url: url };
-}
-
 export async function sendLeaveApprovalCard(
-  input: LeaveRequestInput & { recordId: string; requestId: string; reviewToken: string },
+  input: LeaveRequestInput & { recordId: string; requestId: string },
 ) {
-  const baseUrl = process.env.APP_PUBLIC_URL;
-  if (!baseUrl) throw new Error("Missing APP_PUBLIC_URL");
-
-  const approveUrl = `${baseUrl}/review/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=approve`;
-  const rejectUrl = `${baseUrl}/review/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=reject`;
-  const webhook = webhookFor(input.approvalGroup);
+  const token = await getTenantAccessToken();
+  const chatId = leaveChatIdFor(input.approvalGroup);
 
   const card = {
-    config: { wide_screen_mode: true, enable_forward: true },
+    config: { wide_screen_mode: true, enable_forward: false },
     header: {
       template: "blue",
       title: { tag: "plain_text", content: `${input.employeeName} — Leave Request` },
@@ -336,10 +328,28 @@ export async function sendLeaveApprovalCard(
       {
         tag: "div",
         fields: [
-          { is_short: true, text: { tag: "lark_md", content: `**Leave Type**\n${input.leaveType}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**Day Type**\n${input.dayType}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**Start**\n${input.startDate}${input.startTime ? ` ${input.startTime}` : ""}` } },
-          { is_short: true, text: { tag: "lark_md", content: `**End**\n${input.endDate}${input.endTime ? ` ${input.endTime}` : ""}` } },
+          {
+            is_short: true,
+            text: { tag: "lark_md", content: `**Leave Type**\n${input.leaveType}` },
+          },
+          {
+            is_short: true,
+            text: { tag: "lark_md", content: `**Day Type**\n${input.dayType}` },
+          },
+          {
+            is_short: true,
+            text: {
+              tag: "lark_md",
+              content: `**Start**\n${input.startDate}${input.startTime ? ` ${input.startTime}` : ""}`,
+            },
+          },
+          {
+            is_short: true,
+            text: {
+              tag: "lark_md",
+              content: `**End**\n${input.endDate}${input.endTime ? ` ${input.endTime}` : ""}`,
+            },
+          },
         ],
       },
       { tag: "hr" },
@@ -347,12 +357,6 @@ export async function sendLeaveApprovalCard(
         tag: "div",
         text: { tag: "lark_md", content: `**Reason for leave**\n${input.reason}` },
       },
-      ...(input.notifyNames.length
-        ? [{
-            tag: "div",
-            text: { tag: "lark_md", content: `**Notify**\n${input.notifyNames.join(", ")}` },
-          }]
-        : []),
       {
         tag: "action",
         actions: [
@@ -360,13 +364,21 @@ export async function sendLeaveApprovalCard(
             tag: "button",
             type: "primary",
             text: { tag: "plain_text", content: "Approve" },
-            multi_url: multiUrl(approveUrl),
+            value: {
+              action: "leave_approve",
+              recordId: input.recordId,
+              requestId: input.requestId,
+            },
           },
           {
             tag: "button",
             type: "danger",
             text: { tag: "plain_text", content: "Reject" },
-            multi_url: multiUrl(rejectUrl),
+            value: {
+              action: "leave_reject",
+              recordId: input.recordId,
+              requestId: input.requestId,
+            },
           },
         ],
       },
@@ -379,15 +391,61 @@ export async function sendLeaveApprovalCard(
     ],
   };
 
-  const response = await fetch(webhook, {
+  const url = new URL("https://open.larksuite.com/open-apis/im/v1/messages");
+  url.searchParams.set("receive_id_type", "chat_id");
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      receive_id: chatId,
+      msg_type: "interactive",
+      content: JSON.stringify(card),
+    }),
     cache: "no-store",
   });
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(`Leave group webhook error: ${response.status} ${responseText}`);
+
+  const data = await response.json();
+  if (!response.ok || data.code !== 0) {
+    throw new Error(`Unable to send leave approval card: ${data.msg || response.statusText}`);
+  }
+}
+
+export async function updateLeaveDecisionFromCard(input: {
+  recordId: string;
+  decision: "Approved" | "Rejected";
+}) {
+  const tableId = process.env.LARK_LEAVE_TABLE_ID;
+  if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
+
+  const token = await getTenantAccessToken();
+  const { appToken } = baseConfig();
+
+  const fields: Record<string, unknown> = {
+    Status: input.decision,
+    "Approved At": Date.now(),
+    "Rejection Reason": "",
+  };
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${input.recordId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+  if (!response.ok || data.code !== 0) {
+    throw new Error(`Lark leave update error: ${data.msg || response.statusText}`);
   }
 }
 
@@ -501,7 +559,7 @@ export async function updateLeaveDecision(input: {
   }
 }
 
-export async function sendDecisionCard(input: {
+export async function sendDecisionCard(_input: {
   approvalGroup: string;
   employeeName: string;
   leaveType: string;
@@ -509,6 +567,10 @@ export async function sendDecisionCard(input: {
   approverName: string;
   rejectionReason?: string;
 }) {
+  // Kept only for compatibility with the old web review route.
+  // Direct card approvals no longer send a second webhook decision card.
+}
+) {
   const webhook = webhookFor(input.approvalGroup);
   const approved = input.decision === "Approved";
   const card = {
