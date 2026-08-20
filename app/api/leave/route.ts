@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  createApprovalGroupRecord,
   createLeaveRequest,
   listNotifyContacts,
   sendDirectNotifyMessage,
@@ -84,34 +85,81 @@ export async function POST(request: Request) {
       submittedAt,
     };
 
+    // 1) Always create the master Leave Requests record first.
     const created = await createLeaveRequest(input);
     const reviewToken = makeReviewToken(created.recordId);
 
-    await sendLeaveApprovalCard({
-      ...input,
-      ...created,
-      reviewToken,
-    });
+    // Anything after the master record is created is treated as delivery/routing.
+    // A delivery failure must NOT return a generic submission failure that could
+    // cause the employee to retry and accidentally create a duplicate master record.
+    const routingWarnings: string[] = [];
 
-    const contacts = await listNotifyContacts();
-    const selectedContacts = contacts.filter((x) => notifyNames.includes(x.name));
+    // 2) Copy the request into the approval group's configured Base table.
+    try {
+      const approvalRecord = await createApprovalGroupRecord({
+        ...input,
+        mainRecordId: created.recordId,
+        requestId: created.requestId,
+      });
+
+      if (!approvalRecord.created) {
+        routingWarnings.push(approvalRecord.reason);
+      }
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to create approval-group record.",
+      );
+    }
+
+    // 3) Keep the existing approval-group webhook card.
+    try {
+      await sendLeaveApprovalCard({
+        ...input,
+        ...created,
+        reviewToken,
+      });
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to send approval-group webhook.",
+      );
+    }
+
+    // 4) Keep optional direct notify contacts.
     const notifyFailures: string[] = [];
 
-    for (const contact of selectedContacts) {
-      try {
-        await sendDirectNotifyMessage(
-          contact.openId,
-          `${session.employeeName} submitted a ${parsed.leaveType} request for ${parsed.startDate} to ${parsed.endDate}. Status: Pending Approval.`,
-        );
-      } catch {
-        notifyFailures.push(contact.name);
+    try {
+      const contacts = await listNotifyContacts();
+      const selectedContacts = contacts.filter((x) =>
+        notifyNames.includes(x.name),
+      );
+
+      for (const contact of selectedContacts) {
+        try {
+          await sendDirectNotifyMessage(
+            contact.openId,
+            `${session.employeeName} submitted a ${parsed.leaveType} request for ${parsed.startDate} to ${parsed.endDate}. Status: Pending Approval.`,
+          );
+        } catch {
+          notifyFailures.push(contact.name);
+        }
       }
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to process notify contacts.",
+      );
     }
 
     return NextResponse.json({
       ok: true,
       requestId: created.requestId,
       notifyFailures,
+      routingWarnings,
     });
   } catch (error) {
     console.error("Leave request failed:", error);
