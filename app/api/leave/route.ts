@@ -93,6 +93,8 @@ export async function POST(request: Request) {
     // A delivery failure must NOT return a generic submission failure that could
     // cause the employee to retry and accidentally create a duplicate master record.
     const routingWarnings: string[] = [];
+    let approvalRecordCreated = false;
+    let approvalTableId = "";
 
     // 2) Copy the request into the approval group's configured Base table.
     try {
@@ -104,6 +106,9 @@ export async function POST(request: Request) {
 
       if (!approvalRecord.created) {
         routingWarnings.push(approvalRecord.reason);
+      } else {
+        approvalRecordCreated = true;
+        approvalTableId = approvalRecord.tableId;
       }
     } catch (error) {
       routingWarnings.push(
@@ -158,6 +163,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       requestId: created.requestId,
+      approvalRecordCreated,
+      approvalTableId,
       notifyFailures,
       routingWarnings,
     });
