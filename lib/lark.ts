@@ -298,11 +298,14 @@ function normalizeTableName(value: string) {
  * 1. If LARK_LEAVE_APPROVAL_TABLES contains the group, use that explicit mapping.
  * 2. Otherwise automatically discover a table in the SAME Base by name.
  *
- * Recommended table name:
- *   "<Approval Group> Leave Approvals"
+ * Recommended generalized table name:
+ *   "<Approval Group> Approvals"
  *
  * Example:
- *   Digital Creative -> "Digital Creative Leave Approvals"
+ *   Digital Creative -> "Digital Creative Approvals"
+ *
+ * Older "<Approval Group> Leave Approvals" names are still accepted
+ * for backward compatibility.
  *
  * This means you can create more approval tables later without adding a new
  * environment variable for every table.
@@ -361,6 +364,11 @@ async function approvalDestinationFor(
   const groupName = normalizeTableName(group);
 
   const acceptedNames = new Set([
+    // Preferred generalized names.
+    normalizeTableName(`${group} Approvals`),
+    normalizeTableName(`${group} Approval`),
+
+    // Backward-compatible legacy Leave-specific names.
     normalizeTableName(`${group} Leave Approvals`),
     normalizeTableName(`${group} Leave Approval`),
     normalizeTableName(`${group} Leave Requests`),
@@ -384,14 +392,17 @@ async function approvalDestinationFor(
     };
   }
 
-  // Fallback: allow one unambiguous table whose name starts with the group
-  // and contains "leave".
+  // Fallback: allow one unambiguous approval table whose name starts with
+  // the approval-group name.
   const fallbackMatches = tables.filter((table: any) => {
     const name = normalizeTableName(
       String(table?.name ?? table?.table_name ?? ""),
     );
 
-    return name.startsWith(groupName) && name.includes("leave");
+    return (
+      name.startsWith(groupName) &&
+      (name.includes("approval") || name.includes("leave"))
+    );
   });
 
   if (fallbackMatches.length === 1) {
@@ -406,7 +417,7 @@ async function approvalDestinationFor(
   if (fallbackMatches.length > 1 || exactMatches.length > 1) {
     throw new Error(
       `More than one approval table matches approval group "${group}". ` +
-        `Rename the intended table to "${group} Leave Approvals" or add an explicit mapping in LARK_LEAVE_APPROVAL_TABLES.`,
+        `Rename the intended table to "${group} Approvals" or add an explicit mapping in LARK_LEAVE_APPROVAL_TABLES.`,
     );
   }
 
@@ -507,7 +518,7 @@ export async function createApprovalGroupRecord(
   if (!destination) {
     return {
       created: false as const,
-      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Leave Approvals" or add it to LARK_LEAVE_APPROVAL_TABLES.`,
+      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Approvals" or add it to LARK_LEAVE_APPROVAL_TABLES.`,
     };
   }
 
@@ -532,6 +543,13 @@ export async function createApprovalGroupRecord(
   };
 
   const candidateFields: Record<string, unknown> = {
+    // Generalized approval-hub fields.
+    "Approval Type": "Leave",
+    "Request ID": input.requestId,
+    "Request Title": `${input.employeeName} — ${input.leaveType}`,
+    "Request Details": input.reason,
+
+    // Leave-specific fields (kept for useful approval context).
     "Leave Request ID": input.requestId,
     "Employee ID": input.employeeId,
     "Employee Name": input.employeeName,
@@ -641,10 +659,10 @@ export async function createApprovalGroupRecord(
     ),
   );
 
-  // Leave Request ID is the primary linkage field and should always be writable.
-  if (!fields["Leave Request ID"]) {
+  // Keep at least one stable request identifier for future sync/lookups.
+  if (!fields["Request ID"] && !fields["Leave Request ID"]) {
     throw new Error(
-      `Approval table "${input.approvalGroup}" is missing a writable "Leave Request ID" field.`,
+      `Approval table "${input.approvalGroup}" needs a writable "Request ID" or "Leave Request ID" field.`,
     );
   }
 
@@ -955,6 +973,11 @@ export async function updateApprovalGroupDecision(input: {
       (item: any) =>
         String(item?.fields?.["Main Record ID"] ?? "").trim() ===
         input.mainRecordId.trim(),
+    ) ??
+    items.find(
+      (item: any) =>
+        String(item?.fields?.["Request ID"] ?? "").trim() ===
+        input.requestId.trim(),
     ) ??
     items.find(
       (item: any) =>
