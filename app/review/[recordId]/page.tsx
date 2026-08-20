@@ -39,8 +39,6 @@ export default function ReviewPage() {
 
   const [requestData, setRequestData] = useState<LeaveRequest | null>(null);
   const [decision, setDecision] = useState<"approve" | "reject">(preset);
-  const [approverName, setApproverName] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -72,8 +70,6 @@ export default function ReviewPage() {
           body: JSON.stringify({
             token,
             decision,
-            approverName,
-            mobileNumber,
             rejectionReason,
           }),
         },
@@ -83,15 +79,12 @@ export default function ReviewPage() {
       if (!response.ok) throw new Error(data.error || "Unable to process request.");
 
       setDone(true);
-      setMessage(
-        `Leave request ${data.decision.toLowerCase()} by ${data.approverName}.`,
-      );
+      setMessage(`Leave request ${data.decision.toLowerCase()}.`);
       setRequestData((prev) =>
         prev
           ? {
               ...prev,
               status: data.decision,
-              approvedBy: data.approverName,
             }
           : prev,
       );
@@ -177,47 +170,14 @@ export default function ReviewPage() {
                 <form onSubmit={submit}>
                   <div className="divider" />
 
-                  <h3 className="sectionTitle">Approver Verification</h3>
+                  <h3 className="sectionTitle">
+                    {decision === "approve" ? "Approve Leave Request" : "Reject Leave Request"}
+                  </h3>
                   <p className="muted">
-                    Enter the name and mobile number registered in the Leave
-                    Approvers table for the {requestData.approvalGroup} group.
+                    {decision === "approve"
+                      ? "Confirm that you want to approve this leave request."
+                      : "Enter the reason for rejecting this leave request."}
                   </p>
-
-                  <div className="grid">
-                    <label className="field">
-                      <span className="label">Approver Name *</span>
-                      <input
-                        className="input"
-                        value={approverName}
-                        onChange={(e) => setApproverName(e.target.value)}
-                        required
-                      />
-                    </label>
-
-                    <label className="field">
-                      <span className="label">Registered Mobile *</span>
-                      <input
-                        className="input"
-                        value={mobileNumber}
-                        onChange={(e) => setMobileNumber(e.target.value)}
-                        required
-                      />
-                    </label>
-                  </div>
-
-                  <label className="field">
-                    <span className="label">Decision *</span>
-                    <select
-                      className="select"
-                      value={decision}
-                      onChange={(e) =>
-                        setDecision(e.target.value as "approve" | "reject")
-                      }
-                    >
-                      <option value="approve">Approve</option>
-                      <option value="reject">Reject</option>
-                    </select>
-                  </label>
 
                   {decision === "reject" && (
                     <label className="field">
@@ -226,6 +186,7 @@ export default function ReviewPage() {
                         className="textarea"
                         value={rejectionReason}
                         onChange={(e) => setRejectionReason(e.target.value)}
+                        placeholder="Enter rejection reason"
                         required
                       />
                     </label>
@@ -241,8 +202,8 @@ export default function ReviewPage() {
                     {busy
                       ? "Processing…"
                       : decision === "approve"
-                        ? "Approve Leave"
-                        : "Reject Leave"}
+                        ? "Confirm Approval"
+                        : "Confirm Rejection"}
                   </button>
                 </form>
               )}
