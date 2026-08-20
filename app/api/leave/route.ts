@@ -9,6 +9,7 @@ import {
   uploadLeaveAttachment,
 } from "@/lib/lark";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
+import { makeReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
 
@@ -84,10 +85,12 @@ export async function POST(request: Request) {
     };
 
     const created = await createLeaveRequest(input);
+    const reviewToken = makeReviewToken(created.recordId);
 
     await sendLeaveApprovalCard({
       ...input,
       ...created,
+      reviewToken,
     });
 
     const contacts = await listNotifyContacts();
