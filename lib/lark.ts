@@ -570,34 +570,3 @@ export async function sendDecisionCard(_input: {
   // Kept only for compatibility with the old web review route.
   // Direct card approvals no longer send a second webhook decision card.
 }
-) {
-  const webhook = webhookFor(input.approvalGroup);
-  const approved = input.decision === "Approved";
-  const card = {
-    config: { wide_screen_mode: true },
-    header: {
-      template: approved ? "green" : "red",
-      title: {
-        tag: "plain_text",
-        content: `${input.employeeName} — Leave ${input.decision}`,
-      },
-    },
-    elements: [
-      {
-        tag: "div",
-        text: {
-          tag: "lark_md",
-          content:
-            `**${input.leaveType}**\nStatus: **${input.decision}**\nProcessed by: ${input.approverName}` +
-            (!approved && input.rejectionReason ? `\nReason: ${input.rejectionReason}` : ""),
-        },
-      },
-    ],
-  };
-  await fetch(webhook, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
-    cache: "no-store",
-  });
-}
