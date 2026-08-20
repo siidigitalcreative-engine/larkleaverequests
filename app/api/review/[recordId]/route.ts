@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getLeaveRecord,
   sendDecisionCard,
+  updateApprovalGroupDecision,
   updateLeaveDecision,
 } from "@/lib/lark";
 import { verifyReviewToken } from "@/lib/reviewToken";
@@ -120,6 +121,15 @@ export async function POST(
       recordId: params.recordId,
       decision,
       approverName: "Approval Group",
+      rejectionReason,
+    });
+
+    // Keep the copied approval-group table in sync with the master record.
+    await updateApprovalGroupDecision({
+      approvalGroup: text(f["Approval Group"]),
+      mainRecordId: params.recordId,
+      requestId: text(f["Leave Request ID"]),
+      decision,
       rejectionReason,
     });
 
