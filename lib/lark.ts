@@ -236,6 +236,260 @@ export async function uploadLeaveAttachment(file: File): Promise<string> {
   return String(data.data.file_token);
 }
 
+
+type ApprovalDestination = {
+  appToken: string;
+  tableId: string;
+};
+
+type ApprovalDestinationConfig =
+  | string
+  | {
+      tableId?: string;
+      appToken?: string;
+    };
+
+function approvalDestinationFor(group: string): ApprovalDestination | null {
+  const raw = process.env.LARK_LEAVE_APPROVAL_TABLES;
+  if (!raw?.trim()) return null;
+
+  let config: Record<string, ApprovalDestinationConfig>;
+
+  try {
+    config = JSON.parse(raw) as Record<string, ApprovalDestinationConfig>;
+  } catch {
+    throw new Error(
+      "LARK_LEAVE_APPROVAL_TABLES must be valid JSON.",
+    );
+  }
+
+  const wanted = group.trim().toLowerCase();
+  const matchedKey = Object.keys(config).find(
+    (key) => key.trim().toLowerCase() === wanted,
+  );
+
+  if (!matchedKey) return null;
+
+  const value = config[matchedKey];
+
+  if (typeof value === "string") {
+    const tableId = value.trim();
+    if (!tableId) return null;
+
+    return {
+      appToken: baseConfig().appToken,
+      tableId,
+    };
+  }
+
+  const tableId = String(value?.tableId ?? "").trim();
+  if (!tableId) return null;
+
+  return {
+    appToken: String(value?.appToken ?? "").trim() || baseConfig().appToken,
+    tableId,
+  };
+}
+
+async function listTableFieldsFor(appToken: string, tableId: string) {
+  const token = await getTenantAccessToken();
+  const items: any[] = [];
+  let pageToken = "";
+
+  do {
+    const url = new URL(
+      `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields`,
+    );
+    url.searchParams.set("page_size", "100");
+    if (pageToken) url.searchParams.set("page_token", pageToken);
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+
+    const data = await response.json();
+    if (!response.ok || data.code !== 0) {
+      throw new Error(
+        `Lark approval table fields error: ${data.msg || response.statusText}`,
+      );
+    }
+
+    items.push(...(data.data?.items ?? []));
+    pageToken = data.data?.has_more
+      ? String(data.data?.page_token ?? "")
+      : "";
+  } while (pageToken);
+
+  return items;
+}
+
+function normalizeMemberFieldForWrite(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+
+  const members = value
+    .map((item: any) => {
+      if (typeof item === "string" && item.trim()) {
+        return { id: item.trim() };
+      }
+
+      const id = String(
+        item?.id ?? item?.open_id ?? item?.user_id ?? "",
+      ).trim();
+
+      return id ? { id } : null;
+    })
+    .filter(Boolean);
+
+  return members.length ? members : undefined;
+}
+
+async function employeeMemberForApproval(employeeId: string) {
+  const tableId = process.env.LARK_EMPLOYEES_TABLE_ID;
+  if (!tableId) return undefined;
+
+  const items = await listTableRecords(tableId);
+
+  const employee = items.find(
+    (item) =>
+      String(item?.fields?.["Employee ID"] ?? "").trim() === employeeId.trim(),
+  );
+
+  if (!employee) return undefined;
+
+  const fields = employee.fields ?? {};
+
+  return normalizeMemberFieldForWrite(
+    fields["Employee Lark Member"] ?? fields["Lark Member"],
+  );
+}
+
+/**
+ * Creates the secondary approval-workspace record.
+ *
+ * Routing is controlled entirely by the LARK_LEAVE_APPROVAL_TABLES env var,
+ * so new approval groups/tables can be added without changing frontend/backend code.
+ *
+ * The function also reads the destination table schema first and only sends
+ * fields that actually exist there. This avoids FieldNameNotFound when
+ * different approval tables have slightly different columns.
+ */
+export async function createApprovalGroupRecord(
+  input: LeaveRequestInput & {
+    mainRecordId: string;
+    requestId: string;
+  },
+) {
+  const destination = approvalDestinationFor(input.approvalGroup);
+
+  if (!destination) {
+    return {
+      created: false as const,
+      reason: `No approval table configured for group: ${input.approvalGroup}`,
+    };
+  }
+
+  const token = await getTenantAccessToken();
+  const tableFields = await listTableFieldsFor(
+    destination.appToken,
+    destination.tableId,
+  );
+
+  const existingFieldNames = new Set(
+    tableFields.map((field: any) =>
+      String(field?.field_name ?? "").trim(),
+    ),
+  );
+
+  const toManilaDateTime = (date: string, time: string) => {
+    const normalizedTime = time.length === 5 ? `${time}:00` : time;
+    return new Date(`${date}T${normalizedTime}+08:00`).getTime();
+  };
+
+  const candidateFields: Record<string, unknown> = {
+    "Leave Request ID": input.requestId,
+    "Employee ID": input.employeeId,
+    "Employee Name": input.employeeName,
+    "Department": input.department || "",
+    "Approval Group": input.approvalGroup,
+    "Leave Type": input.leaveType,
+    "Start Date": new Date(
+      `${input.startDate}T00:00:00+08:00`,
+    ).getTime(),
+    "End Date": new Date(
+      `${input.endDate}T00:00:00+08:00`,
+    ).getTime(),
+    "Day Type": input.dayType,
+    "Reason": input.reason,
+    "Decision": "Pending",
+    "Status": "Pending",
+    "Submitted At": input.submittedAt,
+    "Main Record ID": input.mainRecordId,
+    "Sync Status": "Pending",
+  };
+
+  if (input.dayType === "Partial Day" && input.startTime && input.endTime) {
+    candidateFields["Start Time"] = toManilaDateTime(
+      input.startDate,
+      input.startTime,
+    );
+    candidateFields["End Time"] = toManilaDateTime(
+      input.endDate,
+      input.endTime,
+    );
+  }
+
+  if (input.attachmentToken) {
+    candidateFields["Attachment"] = [
+      { file_token: input.attachmentToken },
+    ];
+  }
+
+  if (existingFieldNames.has("Employee Lark Member")) {
+    const memberValue = await employeeMemberForApproval(input.employeeId);
+    if (memberValue) {
+      candidateFields["Employee Lark Member"] = memberValue;
+    }
+  }
+
+  const fields = Object.fromEntries(
+    Object.entries(candidateFields).filter(([fieldName, value]) => {
+      if (!existingFieldNames.has(fieldName)) return false;
+      if (value === undefined || value === null) return false;
+      return true;
+    }),
+  );
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${destination.appToken}/tables/${destination.tableId}/records`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark approval table create error for ${input.approvalGroup}: ${
+        data.msg || response.statusText
+      }`,
+    );
+  }
+
+  return {
+    created: true as const,
+    tableId: destination.tableId,
+    recordId: String(data.data?.record?.record_id ?? ""),
+  };
+}
+
 export async function createLeaveRequest(input: LeaveRequestInput) {
   const tableId = process.env.LARK_LEAVE_TABLE_ID;
   if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
