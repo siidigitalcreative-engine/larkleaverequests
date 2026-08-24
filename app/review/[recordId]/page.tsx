@@ -40,6 +40,7 @@ export default function ReviewPage() {
   const [requestData, setRequestData] = useState<LeaveRequest | null>(null);
   const [decision, setDecision] = useState<"approve" | "reject">(preset);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [approvalComment, setApprovalComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
@@ -71,6 +72,7 @@ export default function ReviewPage() {
             token,
             decision,
             rejectionReason,
+            approvalComment,
           }),
         },
       );
@@ -178,6 +180,18 @@ export default function ReviewPage() {
                       ? "Confirm that you want to approve this leave request."
                       : "Enter the reason for rejecting this leave request."}
                   </p>
+
+                  {decision === "approve" && (
+                    <label className="field">
+                      <span className="label">Approval Comment</span>
+                      <textarea
+                        className="textarea"
+                        value={approvalComment}
+                        onChange={(e) => setApprovalComment(e.target.value)}
+                        placeholder="Add an optional approval comment"
+                      />
+                    </label>
+                  )}
 
                   {decision === "reject" && (
                     <label className="field">
