@@ -434,7 +434,58 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
+    <>
+      <style jsx global>{`
+        input[type="date"] {
+          display: block !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          overflow: hidden !important;
+          -webkit-appearance: none;
+          appearance: none;
+          font-size: 16px;
+          line-height: 1.25;
+        }
+
+        input[type="date"]::-webkit-date-and-time-value {
+          min-width: 0 !important;
+          width: auto !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          text-align: left !important;
+        }
+
+        input[type="date"]::-webkit-datetime-edit {
+          min-width: 0 !important;
+          padding: 0 !important;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          margin-left: auto !important;
+          flex: 0 0 auto !important;
+        }
+
+        @media (max-width: 640px) {
+          .grid {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+
+          .field {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            overflow: hidden;
+          }
+
+          .field > input[type="date"] {
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+        }
+      `}</style>
+
+      <main className="shell">
       <div className="wrap">
         <div className="brand">
           <div className="brandMark">A</div>
@@ -1378,6 +1429,7 @@ export default function Home() {
           </div>
         )}
       </div>
-    </main>
+      </main>
+    </>
   );
 }
