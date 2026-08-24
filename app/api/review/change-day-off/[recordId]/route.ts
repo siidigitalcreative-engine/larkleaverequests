@@ -114,6 +114,7 @@ export async function POST(
     }
 
     const rejectionReason = text(body.rejectionReason);
+    const approvalComment = text(body.approvalComment);
 
     if (decision === "Rejected" && rejectionReason.length < 2) {
       return NextResponse.json(
@@ -126,6 +127,7 @@ export async function POST(
       recordId: params.recordId,
       decision,
       rejectionReason,
+      approvalComment,
     });
 
     const warnings: string[] = [];
@@ -138,6 +140,7 @@ export async function POST(
           text(f["Change Off Request ID"]) || text(f["Request ID"]),
         decision,
         rejectionReason,
+        approvalComment,
       });
     } catch (error) {
       warnings.push(
@@ -157,6 +160,7 @@ export async function POST(
         requestedNewOffDate: dateText(f["Requested New Off-Date"]),
         decision,
         rejectionReason,
+        approvalComment,
       });
     } catch (error) {
       warnings.push(
