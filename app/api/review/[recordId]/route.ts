@@ -65,7 +65,12 @@ export async function GET(
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to load request." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to load request.",
+      },
       { status: 500 },
     );
   }
@@ -94,7 +99,10 @@ export async function POST(
           : null;
 
     if (!decision) {
-      return NextResponse.json({ error: "Invalid decision." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid decision." },
+        { status: 400 },
+      );
     }
 
     const record = await getLeaveRecord(params.recordId);
@@ -117,6 +125,7 @@ export async function POST(
       );
     }
 
+    // 1) Main Leave Records table is the source of truth.
     await updateLeaveDecision({
       recordId: params.recordId,
       decision,
@@ -124,36 +133,64 @@ export async function POST(
       rejectionReason,
     });
 
-    // Keep the copied approval-group table in sync with the master record.
-    await updateApprovalGroupDecision({
-      approvalGroup: text(f["Approval Group"]),
-      mainRecordId: params.recordId,
-      requestId: text(f["Leave Request ID"]),
-      decision,
-      rejectionReason,
-    });
+    const warnings: string[] = [];
 
-    // Post a new final-status card to the same approval group.
-    // The original webhook card cannot be edited, so this gives the group
-    // a clear visible Approved/Rejected result with no action buttons.
-    await sendDecisionCard({
-      approvalGroup: text(f["Approval Group"]),
-      employeeName: text(f["Employee Name"]),
-      requestId: text(f["Leave Request ID"]),
-      leaveType: text(f["Leave Type"]),
-      startDate: dateText(f["Start Date"]),
-      endDate: dateText(f["End Date"]),
-      decision,
-      rejectionReason,
-    });
+    // 2) Sync the department/general approval table.
+    // A sync failure must NOT prevent the result card from being sent.
+    try {
+      await updateApprovalGroupDecision({
+        approvalGroup: text(f["Approval Group"]),
+        mainRecordId: params.recordId,
+        requestId: text(f["Leave Request ID"]),
+        decision,
+        rejectionReason,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to sync approval-group table.";
+
+      warnings.push(message);
+      console.error("Approval-group table sync failed:", error);
+    }
+
+    // 3) Always attempt to send the Approved/Rejected result back
+    // to the same Lark approval group, even if step 2 failed.
+    try {
+      await sendDecisionCard({
+        approvalGroup: text(f["Approval Group"]),
+        employeeName: text(f["Employee Name"]),
+        requestId: text(f["Leave Request ID"]),
+        leaveType: text(f["Leave Type"]),
+        startDate: dateText(f["Start Date"]),
+        endDate: dateText(f["End Date"]),
+        decision,
+        rejectionReason,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to send final decision card.";
+
+      warnings.push(message);
+      console.error("Final decision card failed:", error);
+    }
 
     return NextResponse.json({
       ok: true,
       decision,
+      warnings,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to process decision." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to process decision.",
+      },
       { status: 500 },
     );
   }
