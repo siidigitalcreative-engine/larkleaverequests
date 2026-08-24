@@ -436,25 +436,40 @@ export default function Home() {
   return (
     <>
       <style jsx global>{`
-        input[type="date"] {
+        .dateInputShell {
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          height: 48px;
+          box-sizing: border-box;
+          border: 1px solid #d0d5dd;
+          border-radius: 12px;
+          background: #ffffff;
+          overflow: hidden;
+        }
+
+        .dateNativeInput {
           display: block !important;
           width: 100% !important;
-          min-width: 0 !important;
           max-width: 100% !important;
+          min-width: 0 !important;
+          height: 100% !important;
           min-height: 48px !important;
-          height: 48px !important;
           box-sizing: border-box !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          outline: 0 !important;
+          margin: 0 !important;
+          padding: 0 14px !important;
+          background: transparent !important;
+          color: #101828 !important;
           font-size: 16px !important;
           line-height: 1.2 !important;
-          padding: 0 14px !important;
-          margin: 0 !important;
-          background: #ffffff !important;
-          color: #101828 !important;
           -webkit-appearance: auto !important;
           appearance: auto !important;
         }
 
-        input[type="date"]::-webkit-date-and-time-value {
+        .dateNativeInput::-webkit-date-and-time-value {
           min-width: 0 !important;
           text-align: left !important;
         }
@@ -469,16 +484,11 @@ export default function Home() {
             min-width: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
-            overflow: visible !important;
           }
 
-          .field > input[type="date"] {
-            display: block !important;
+          .dateInputShell {
             width: 100% !important;
-            min-width: 0 !important;
             max-width: 100% !important;
-            box-sizing: border-box !important;
-            margin: 0 !important;
           }
         }
       `}</style>
@@ -1094,40 +1104,40 @@ export default function Home() {
               <div className="grid">
                 <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">Start Date *</span>
-                  <input
-                    className="input"
-                    type="date"
-                    style={{
+                  <div className="dateInputShell">
+                    <input
+                      className="dateNativeInput"
+                      type="date"                    style={{
                       width: "100%",
                       minWidth: 0,
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
-                    value={startDate}
-                    onChange={(event) =>
+                      value={startDate}                    onChange={(event) =>
                       setStartDate(event.target.value)
                     }
                     required
-                  />
+                    />
+                  </div>
                 </label>
 
                 <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">End Date *</span>
-                  <input
-                    className="input"
-                    type="date"
-                    style={{
+                  <div className="dateInputShell">
+                    <input
+                      className="dateNativeInput"
+                      type="date"                    style={{
                       width: "100%",
                       minWidth: 0,
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
-                    value={endDate}
-                    onChange={(event) =>
+                      value={endDate}                    onChange={(event) =>
                       setEndDate(event.target.value)
                     }
                     required
-                  />
+                    />
+                  </div>
                 </label>
               </div>
 
@@ -1338,31 +1348,31 @@ export default function Home() {
                   <span className="label">
                     Current Off-Date *
                   </span>
-                  <input
-                    className="input"
-                    type="date"
-                    style={{
+                  <div className="dateInputShell">
+                    <input
+                      className="dateNativeInput"
+                      type="date"                    style={{
                       width: "100%",
                       minWidth: 0,
                       maxWidth: "100%",
                       boxSizing: "border-box",
                     }}
-                    value={currentOffDate}
-                    onChange={(event) =>
+                      value={currentOffDate}                    onChange={(event) =>
                       setCurrentOffDate(event.target.value)
                     }
                     required
-                  />
+                    />
+                  </div>
                 </label>
 
                 <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">
                     Requested New Off-Date *
                   </span>
-                  <input
-                    className="input"
-                    type="date"
-                    style={{
+                  <div className="dateInputShell">
+                    <input
+                      className="dateNativeInput"
+                      type="date"                    style={{
                       width: "100%",
                       minWidth: 0,
                       maxWidth: "100%",
@@ -1370,14 +1380,14 @@ export default function Home() {
                     }}
                     min={week.start}
                     max={week.end}
-                    value={requestedNewOffDate}
-                    onChange={(event) =>
+                      value={requestedNewOffDate}                    onChange={(event) =>
                       setRequestedNewOffDate(
                         event.target.value,
                       )
                     }
                     required
-                  />
+                    />
+                  </div>
                   <div
                     className="small"
                     style={{ marginTop: 5 }}
