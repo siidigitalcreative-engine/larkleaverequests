@@ -36,6 +36,17 @@ export type LeaveRequestInput = {
   submittedAt: number;
 };
 
+export type ChangeOffRequestInput = {
+  employeeId: string;
+  employeeName: string;
+  department?: string;
+  approvalGroup: string;
+  currentOffDate: string;
+  requestedNewOffDate: string;
+  reason: string;
+  submittedAt: number;
+};
+
 function baseConfig() {
   const appToken = process.env.LARK_BASE_APP_TOKEN;
   if (!appToken) throw new Error("Missing LARK_BASE_APP_TOKEN");
@@ -314,7 +325,7 @@ async function approvalDestinationFor(
   group: string,
 ): Promise<ApprovalDestination | null> {
   const defaultAppToken = baseConfig().appToken;
-  const raw = process.env.LARK_LEAVE_APPROVAL_TABLES;
+  const raw = process.env.LARK_APPROVAL_TABLES || process.env.LARK_LEAVE_APPROVAL_TABLES;
 
   // Optional explicit overrides remain supported.
   if (raw?.trim()) {
@@ -324,7 +335,7 @@ async function approvalDestinationFor(
       config = JSON.parse(raw) as Record<string, ApprovalDestinationConfig>;
     } catch {
       throw new Error(
-        "LARK_LEAVE_APPROVAL_TABLES must be valid JSON.",
+        "LARK_APPROVAL_TABLES (or legacy LARK_LEAVE_APPROVAL_TABLES) must be valid JSON.",
       );
     }
 
@@ -417,7 +428,7 @@ async function approvalDestinationFor(
   if (fallbackMatches.length > 1 || exactMatches.length > 1) {
     throw new Error(
       `More than one approval table matches approval group "${group}". ` +
-        `Rename the intended table to "${group} Approvals" or add an explicit mapping in LARK_LEAVE_APPROVAL_TABLES.`,
+        `Rename the intended table to "${group} Approvals" or add an explicit mapping in LARK_APPROVAL_TABLES.`,
     );
   }
 
@@ -518,7 +529,7 @@ export async function createApprovalGroupRecord(
   if (!destination) {
     return {
       created: false as const,
-      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Approvals" or add it to LARK_LEAVE_APPROVAL_TABLES.`,
+      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Approvals" or add it to LARK_APPROVAL_TABLES.`,
     };
   }
 
@@ -697,6 +708,228 @@ export async function createApprovalGroupRecord(
   };
 }
 
+
+export async function createChangeOffApprovalGroupRecord(
+  input: ChangeOffRequestInput & {
+    mainRecordId: string;
+    requestId: string;
+  },
+) {
+  const destination = await approvalDestinationFor(input.approvalGroup);
+
+  if (!destination) {
+    return {
+      created: false as const,
+      reason: `No approval table found for group: ${input.approvalGroup}. Name the table "${input.approvalGroup} Approvals" or add it to LARK_APPROVAL_TABLES.`,
+    };
+  }
+
+  const token = await getTenantAccessToken();
+  const tableFields = await listTableFieldsFor(
+    destination.appToken,
+    destination.tableId,
+  );
+
+  const fieldsByName = new Map(
+    tableFields.map((field: any) => [
+      String(field?.field_name ?? "").trim(),
+      field,
+    ]),
+  );
+
+  const candidateFields: Record<string, unknown> = {
+    "Approval Type": "Change Day-Off",
+    "Request ID": input.requestId,
+    "Request Title": `${input.employeeName} — Change Day-Off`,
+    "Request Details": input.reason,
+    "Employee ID": input.employeeId,
+    "Employee Name": input.employeeName,
+    "Department": input.department || "",
+    "Approval Group": input.approvalGroup,
+    "Current Off-Date": new Date(
+      `${input.currentOffDate}T00:00:00+08:00`,
+    ).getTime(),
+    "Requested New Off-Date": new Date(
+      `${input.requestedNewOffDate}T00:00:00+08:00`,
+    ).getTime(),
+    "Reason": input.reason,
+    "Reason for Change": input.reason,
+    "Decision": "Pending",
+    "Status": "Pending",
+    "Submitted At": input.submittedAt,
+    "Main Record ID": input.mainRecordId,
+    "Sync Status": "Pending",
+  };
+
+  const skippedFields: string[] = [];
+
+  function canWriteField(fieldName: string, value: unknown) {
+    const field = fieldsByName.get(fieldName);
+
+    if (!field) {
+      skippedFields.push(`${fieldName}: field does not exist`);
+      return false;
+    }
+
+    if (value === undefined || value === null) {
+      skippedFields.push(`${fieldName}: empty value`);
+      return false;
+    }
+
+    const fieldType = Number(field?.type);
+
+    if (fieldType === 3 || fieldType === 4) {
+      const optionNames = new Set(
+        (field?.property?.options ?? []).map((option: any) =>
+          String(option?.name ?? "").trim(),
+        ),
+      );
+
+      if (fieldType === 3) {
+        const wanted = String(value ?? "").trim();
+        if (!optionNames.has(wanted)) {
+          skippedFields.push(
+            `${fieldName}: option "${wanted}" does not exist in destination table`,
+          );
+          return false;
+        }
+      }
+
+      if (fieldType === 4 && Array.isArray(value)) {
+        const wanted = value.map((item) => String(item).trim());
+        if (wanted.some((item) => !optionNames.has(item))) {
+          skippedFields.push(
+            `${fieldName}: one or more multi-select options do not exist`,
+          );
+          return false;
+        }
+      }
+    }
+
+    if ([19, 20, 1001, 1002, 1003, 1004, 1005].includes(fieldType)) {
+      skippedFields.push(`${fieldName}: read-only/computed field`);
+      return false;
+    }
+
+    return true;
+  }
+
+  const fields = Object.fromEntries(
+    Object.entries(candidateFields).filter(([fieldName, value]) =>
+      canWriteField(fieldName, value),
+    ),
+  );
+
+  if (!fields["Request ID"]) {
+    throw new Error(
+      `Approval table "${input.approvalGroup}" needs a writable "Request ID" field for generalized requests.`,
+    );
+  }
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${destination.appToken}/tables/${destination.tableId}/records`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark approval table create error for ${input.approvalGroup}: ${
+        data.msg || response.statusText
+      }`,
+    );
+  }
+
+  return {
+    created: true as const,
+    tableId: destination.tableId,
+    recordId: String(data.data?.record?.record_id ?? ""),
+    skippedFields,
+  };
+}
+
+export async function createChangeOffRequest(input: ChangeOffRequestInput) {
+  const tableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
+  if (!tableId) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+
+  const token = await getTenantAccessToken();
+  const { appToken } = baseConfig();
+  const requestId = `${input.employeeId}-CO-${input.submittedAt}`;
+
+  const fields: Record<string, unknown> = {
+    "Change Off Request ID": requestId,
+    "Request ID": requestId,
+    "Employee ID": input.employeeId,
+    "Employee Name": input.employeeName,
+    "Department": input.department || "",
+    "Approval Group": input.approvalGroup,
+    "Current Off-Date": new Date(
+      `${input.currentOffDate}T00:00:00+08:00`,
+    ).getTime(),
+    "Requested New Off-Date": new Date(
+      `${input.requestedNewOffDate}T00:00:00+08:00`,
+    ).getTime(),
+    "Reason for Change": input.reason,
+    "Reason": input.reason,
+    "Status": "Pending",
+    "Submitted At": input.submittedAt,
+    "Rejection Reason": "",
+  };
+
+  // Only send fields that actually exist in the Change Day-Off master table.
+  const tableFields = await listTableFieldsFor(appToken, tableId);
+  const existingFieldNames = new Set(
+    tableFields.map((field: any) =>
+      String(field?.field_name ?? "").trim(),
+    ),
+  );
+
+  const writableFields = Object.fromEntries(
+    Object.entries(fields).filter(([name]) => existingFieldNames.has(name)),
+  );
+
+  if (!writableFields["Change Off Request ID"] && !writableFields["Request ID"]) {
+    throw new Error(
+      'Change Day-Off table needs "Change Off Request ID" or "Request ID".',
+    );
+  }
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields: writableFields }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark Change Day-Off create error: ${data.msg || response.statusText}`,
+    );
+  }
+
+  return {
+    recordId: String(data.data?.record?.record_id ?? ""),
+    requestId,
+  };
+}
+
 export async function createLeaveRequest(input: LeaveRequestInput) {
   const tableId = process.env.LARK_LEAVE_TABLE_ID;
   if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
@@ -761,8 +994,19 @@ export async function createLeaveRequest(input: LeaveRequestInput) {
 
 function webhookFor(group: string) {
   const key = group.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
-  const value = process.env[`LARK_LEAVE_WEBHOOK_${key}`];
-  if (!value) throw new Error(`Missing leave webhook for approval group: ${group}`);
+
+  // Preferred generalized env name.
+  const value =
+    process.env[`LARK_APPROVAL_WEBHOOK_${key}`] ||
+    // Backward-compatible legacy name during migration.
+    process.env[`LARK_LEAVE_WEBHOOK_${key}`];
+
+  if (!value) {
+    throw new Error(
+      `Missing approval webhook for group: ${group}. Expected LARK_APPROVAL_WEBHOOK_${key}.`,
+    );
+  }
+
   return value;
 }
 
@@ -849,6 +1093,120 @@ export async function sendLeaveApprovalCard(
   const responseText = await response.text();
   if (!response.ok) {
     throw new Error(`Leave group webhook error: ${response.status} ${responseText}`);
+  }
+}
+
+
+export async function sendChangeOffApprovalCard(
+  input: ChangeOffRequestInput & {
+    recordId: string;
+    requestId: string;
+    reviewToken: string;
+  },
+) {
+  const baseUrl = process.env.APP_PUBLIC_URL;
+  if (!baseUrl) throw new Error("Missing APP_PUBLIC_URL");
+
+  const approveUrl =
+    `${baseUrl}/review/change-day-off/${encodeURIComponent(input.recordId)}` +
+    `?token=${encodeURIComponent(input.reviewToken)}&decision=approve`;
+
+  const rejectUrl =
+    `${baseUrl}/review/change-day-off/${encodeURIComponent(input.recordId)}` +
+    `?token=${encodeURIComponent(input.reviewToken)}&decision=reject`;
+
+  const webhook = webhookFor(input.approvalGroup);
+
+  const card = {
+    config: { wide_screen_mode: true, enable_forward: true },
+    header: {
+      template: "blue",
+      title: {
+        tag: "plain_text",
+        content: `${input.employeeName} — Change Day-Off Request`,
+      },
+    },
+    elements: [
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content:
+            `**${input.employeeName}'s Change Day-Off Request**\n` +
+            `Employee ID: ${input.employeeId}\n` +
+            `Department: ${input.department || "—"}\n` +
+            `Approval Group: ${input.approvalGroup}`,
+        },
+      },
+      {
+        tag: "div",
+        fields: [
+          {
+            is_short: true,
+            text: {
+              tag: "lark_md",
+              content: `**Current Off-Date**\n${input.currentOffDate}`,
+            },
+          },
+          {
+            is_short: true,
+            text: {
+              tag: "lark_md",
+              content: `**Requested New Off-Date**\n${input.requestedNewOffDate}`,
+            },
+          },
+        ],
+      },
+      { tag: "hr" },
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content: `**Reason for Change**\n${input.reason}`,
+        },
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            type: "primary",
+            text: { tag: "plain_text", content: "Approve" },
+            multi_url: multiUrl(approveUrl),
+          },
+          {
+            tag: "button",
+            type: "danger",
+            text: { tag: "plain_text", content: "Reject" },
+            multi_url: multiUrl(rejectUrl),
+          },
+        ],
+      },
+      {
+        tag: "note",
+        elements: [
+          {
+            tag: "plain_text",
+            content: `Request ${input.requestId} • Pending approval`,
+          },
+        ],
+      },
+    ],
+  };
+
+  const response = await fetch(webhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ msg_type: "interactive", card }),
+    cache: "no-store",
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `Approval group webhook error: ${response.status} ${responseText}`,
+    );
   }
 }
 
@@ -1097,6 +1455,161 @@ export async function updateLeaveDecision(input: {
   const data = await response.json();
   if (!response.ok || data.code !== 0) {
     throw new Error(`Lark leave update error: ${data.msg || response.statusText}`);
+  }
+}
+
+
+export async function getChangeOffRecord(recordId: string) {
+  const tableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
+  if (!tableId) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+
+  const token = await getTenantAccessToken();
+  const { appToken } = baseConfig();
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${recordId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark Change Day-Off read error: ${data.msg || response.statusText}`,
+    );
+  }
+
+  return data.data?.record;
+}
+
+export async function updateChangeOffDecision(input: {
+  recordId: string;
+  decision: "Approved" | "Rejected";
+  rejectionReason?: string;
+}) {
+  const tableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
+  if (!tableId) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+
+  const token = await getTenantAccessToken();
+  const { appToken } = baseConfig();
+
+  const tableFields = await listTableFieldsFor(appToken, tableId);
+  const existingFieldNames = new Set(
+    tableFields.map((field: any) =>
+      String(field?.field_name ?? "").trim(),
+    ),
+  );
+
+  const candidateFields: Record<string, unknown> = {
+    Status: input.decision,
+    "Approved At": Date.now(),
+    "Rejection Reason":
+      input.decision === "Rejected" ? input.rejectionReason || "" : "",
+  };
+
+  const fields = Object.fromEntries(
+    Object.entries(candidateFields).filter(([name]) =>
+      existingFieldNames.has(name),
+    ),
+  );
+
+  const response = await fetch(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${input.recordId}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ fields }),
+      cache: "no-store",
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Lark Change Day-Off update error: ${data.msg || response.statusText}`,
+    );
+  }
+}
+
+export async function sendChangeOffDecisionCard(input: {
+  approvalGroup: string;
+  employeeName: string;
+  requestId: string;
+  currentOffDate: string;
+  requestedNewOffDate: string;
+  decision: "Approved" | "Rejected";
+  rejectionReason?: string;
+}) {
+  const webhook = webhookFor(input.approvalGroup);
+  const approved = input.decision === "Approved";
+
+  const card = {
+    config: { wide_screen_mode: true, enable_forward: true },
+    header: {
+      template: approved ? "green" : "red",
+      title: {
+        tag: "plain_text",
+        content: `${input.employeeName} — Change Day-Off ${input.decision}`,
+      },
+    },
+    elements: [
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content:
+            `**Change Day-Off Request**\n` +
+            `Current Off-Date: ${input.currentOffDate}\n` +
+            `Requested New Off-Date: ${input.requestedNewOffDate}\n` +
+            `Status: **${input.decision}**` +
+            (!approved && input.rejectionReason
+              ? `\nRejection Reason: ${input.rejectionReason}`
+              : ""),
+        },
+      },
+      {
+        tag: "note",
+        elements: [
+          {
+            tag: "plain_text",
+            content: `Request ${input.requestId} • ${input.decision}`,
+          },
+        ],
+      },
+    ],
+  };
+
+  const response = await fetch(webhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ msg_type: "interactive", card }),
+    cache: "no-store",
+  });
+
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `Approval decision webhook error: ${response.status} ${responseText}`,
+    );
+  }
+
+  try {
+    const data = JSON.parse(responseText) as { code?: number; msg?: string };
+    if (typeof data.code === "number" && data.code !== 0) {
+      throw new Error(
+        `Approval decision webhook error: ${data.msg || data.code}`,
+      );
+    }
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
   }
 }
 
