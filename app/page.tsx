@@ -214,6 +214,15 @@ export default function Home() {
       const response = await fetch("/api/approval-history", {
         cache: "no-store",
       });
+
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          "Approval History API is not deployed. Add app/api/approval-history/route.ts and redeploy.",
+        );
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -648,6 +657,9 @@ export default function Home() {
                   minHeight: 110,
                   textAlign: "left",
                   padding: 20,
+                  background: "#eef4ff",
+                  border: "1px solid #c7d7fe",
+                  color: "#1849a9",
                 }}
               >
                 <span>
@@ -660,7 +672,7 @@ export default function Home() {
                   >
                     Leave Request
                   </strong>
-                  <span className="small">
+                  <span className="small" style={{ color: "#475467" }}>
                     File vacation, sick, emergency, and other
                     available leave types.
                   </span>
@@ -677,6 +689,9 @@ export default function Home() {
                   minHeight: 110,
                   textAlign: "left",
                   padding: 20,
+                  background: "#fff7e8",
+                  border: "1px solid #fedf89",
+                  color: "#b54708",
                 }}
               >
                 <span>
@@ -689,7 +704,7 @@ export default function Home() {
                   >
                     Change Day-Off
                   </strong>
-                  <span className="small">
+                  <span className="small" style={{ color: "#475467" }}>
                     Request a different off-date for the current
                     week.
                   </span>
@@ -708,6 +723,9 @@ export default function Home() {
                   minHeight: 110,
                   textAlign: "left",
                   padding: 20,
+                  background: "#f4f3ff",
+                  border: "1px solid #d9d6fe",
+                  color: "#5925dc",
                 }}
               >
                 <span>
@@ -720,7 +738,7 @@ export default function Home() {
                   >
                     My Approval History
                   </strong>
-                  <span className="small">
+                  <span className="small" style={{ color: "#475467" }}>
                     View your previously filed requests and their
                     current approval status.
                   </span>
