@@ -1398,6 +1398,7 @@ export async function updateApprovalGroupDecision(input: {
   requestId: string;
   decision: "Approved" | "Rejected";
   rejectionReason?: string;
+  approvalComment?: string;
 }) {
   const destination = await approvalDestinationFor(input.approvalGroup);
 
@@ -1485,6 +1486,13 @@ export async function updateApprovalGroupDecision(input: {
         : "";
   }
 
+  if (existingFieldNames.has("Approval Comment")) {
+    fields["Approval Comment"] =
+      input.decision === "Approved"
+        ? input.approvalComment || ""
+        : "";
+  }
+
   if (existingFieldNames.has("Processed At")) {
     fields["Processed At"] = Date.now();
   }
@@ -1534,6 +1542,7 @@ export async function updateLeaveDecision(input: {
   decision: "Approved" | "Rejected";
   approverName: string;
   rejectionReason?: string;
+  approvalComment?: string;
 }) {
   const tableId = process.env.LARK_LEAVE_TABLE_ID;
   if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
@@ -1545,6 +1554,7 @@ export async function updateLeaveDecision(input: {
     "Approved By": input.approverName,
     "Approved At": Date.now(),
     "Rejection Reason": input.decision === "Rejected" ? input.rejectionReason || "" : "",
+    "Approval Comment": input.decision === "Approved" ? input.approvalComment || "" : "",
   };
 
   const response = await fetch(
@@ -1596,6 +1606,7 @@ export async function updateChangeOffDecision(input: {
   recordId: string;
   decision: "Approved" | "Rejected";
   rejectionReason?: string;
+  approvalComment?: string;
 }) {
   const tableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
   if (!tableId) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
@@ -1615,6 +1626,8 @@ export async function updateChangeOffDecision(input: {
     "Approved At": Date.now(),
     "Rejection Reason":
       input.decision === "Rejected" ? input.rejectionReason || "" : "",
+    "Approval Comment":
+      input.decision === "Approved" ? input.approvalComment || "" : "",
   };
 
   const fields = Object.fromEntries(
@@ -1653,6 +1666,7 @@ export async function sendChangeOffDecisionCard(input: {
   requestedNewOffDate: string;
   decision: "Approved" | "Rejected";
   rejectionReason?: string;
+  approvalComment?: string;
 }) {
   const webhook = webhookFor(input.approvalGroup);
   const approved = input.decision === "Approved";
@@ -1676,6 +1690,9 @@ export async function sendChangeOffDecisionCard(input: {
             `Current Off-Date: ${input.currentOffDate}\n` +
             `Requested New Off-Date: ${input.requestedNewOffDate}\n` +
             `Status: **${input.decision}**` +
+            (approved && input.approvalComment
+              ? `\nApproval Comment: ${input.approvalComment}`
+              : "") +
             (!approved && input.rejectionReason
               ? `\nRejection Reason: ${input.rejectionReason}`
               : ""),
@@ -1729,6 +1746,7 @@ export async function sendDecisionCard(input: {
   endDate?: string;
   decision: "Approved" | "Rejected";
   rejectionReason?: string;
+  approvalComment?: string;
 }) {
   const webhook = webhookFor(input.approvalGroup);
   const approved = input.decision === "Approved";
@@ -1754,6 +1772,9 @@ export async function sendDecisionCard(input: {
               ? `Date: ${input.startDate}${input.startDate !== input.endDate ? ` to ${input.endDate}` : ""}\n`
               : "") +
             `Status: **${input.decision}**` +
+            (approved && input.approvalComment
+              ? `\nApproval Comment: ${input.approvalComment}`
+              : "") +
             (!approved && input.rejectionReason
               ? `\nRejection Reason: ${input.rejectionReason}`
               : ""),
