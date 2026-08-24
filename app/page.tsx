@@ -9,15 +9,51 @@ type Employee = {
   leaveApprovalGroup: string;
 };
 
-type PublicEmployee = { employeeName: string; department: string };
-type NotifyContact = { name: string };
+type PublicEmployee = {
+  employeeName: string;
+  department: string;
+};
 
+type NotifyContact = {
+  name: string;
+};
+
+type RequestType = "leave" | "changeOff";
 
 function mobileDisplay(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
-  return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 10)]
+
+  return [
+    digits.slice(0, 3),
+    digits.slice(3, 6),
+    digits.slice(6, 10),
+  ]
     .filter(Boolean)
     .join(" ");
+}
+
+function ymdLocal(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function currentWeekBounds() {
+  const today = new Date();
+  const day = today.getDay();
+  const daysSinceMonday = (day + 6) % 7;
+
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - daysSinceMonday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return {
+    start: ymdLocal(monday),
+    end: ymdLocal(sunday),
+  };
 }
 
 export default function Home() {
@@ -30,58 +66,103 @@ export default function Home() {
   const [employeeName, setEmployeeName] = useState("");
   const [mobile, setMobile] = useState("");
 
+  const [requestType, setRequestType] = useState<RequestType | null>(
+    null,
+  );
+
+  // Leave
   const [leaveType, setLeaveType] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [dayType, setDayType] = useState<"Full Day" | "Partial Day">("Full Day");
+  const [dayType, setDayType] = useState<
+    "Full Day" | "Partial Day"
+  >("Full Day");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [reason, setReason] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
   const [notify, setNotify] = useState<string[]>([]);
   const [attachment, setAttachment] = useState<File | null>(null);
 
+  // Change Day-Off
+  const [currentOffDate, setCurrentOffDate] = useState("");
+  const [requestedNewOffDate, setRequestedNewOffDate] = useState("");
+  const [changeOffReason, setChangeOffReason] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] = useState<"normal" | "error" | "success">("normal");
+  const [statusKind, setStatusKind] = useState<
+    "normal" | "error" | "success"
+  >("normal");
   const [submittedId, setSubmittedId] = useState("");
+  const [submittedType, setSubmittedType] =
+    useState<RequestType | null>(null);
+
+  const week = useMemo(() => currentWeekBounds(), []);
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/employees", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/notify-contacts", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/leave-options", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/auth/session", { cache: "no-store" }).then((r) =>
+        r.json(),
+      ),
+      fetch("/api/employees", { cache: "no-store" }).then((r) =>
+        r.json(),
+      ),
+      fetch("/api/notify-contacts", { cache: "no-store" }).then(
+        (r) => r.json(),
+      ),
+      fetch("/api/leave-options", { cache: "no-store" }).then((r) =>
+        r.json(),
+      ),
     ])
-      .then(([session, employeeData, contactData, leaveOptionsData]) => {
-        if (session.authenticated) setEmployee(session.employee);
-        setEmployees(employeeData.employees || []);
-        setContacts(contactData.contacts || []);
+      .then(
+        ([
+          session,
+          employeeData,
+          contactData,
+          leaveOptionsData,
+        ]) => {
+          if (session.authenticated) {
+            setEmployee(session.employee);
+          }
 
-        const options = Array.isArray(leaveOptionsData.leaveTypes)
-          ? leaveOptionsData.leaveTypes.filter(
-              (value: unknown): value is string =>
-                typeof value === "string" && value.trim().length > 0,
-            )
-          : [];
+          setEmployees(employeeData.employees || []);
+          setContacts(contactData.contacts || []);
 
-        setLeaveTypes(options);
-        setLeaveType((current) =>
-          current && options.includes(current) ? current : options[0] || "",
-        );
-      })
+          const options = Array.isArray(
+            leaveOptionsData.leaveTypes,
+          )
+            ? leaveOptionsData.leaveTypes.filter(
+                (value: unknown): value is string =>
+                  typeof value === "string" &&
+                  value.trim().length > 0,
+              )
+            : [];
+
+          setLeaveTypes(options);
+          setLeaveType((current) =>
+            current && options.includes(current)
+              ? current
+              : options[0] || "",
+          );
+        },
+      )
       .finally(() => setLoading(false));
   }, []);
 
   const filteredEmployees = useMemo(() => {
-    const q = employeeName.trim().toLowerCase();
-    if (!q) return [];
+    const query = employeeName.trim().toLowerCase();
+
+    if (!query) return [];
+
     return employees
-      .filter((x) => x.employeeName.toLowerCase().includes(q))
+      .filter((item) =>
+        item.employeeName.toLowerCase().includes(query),
+      )
       .slice(0, 8);
   }, [employeeName, employees]);
 
-  async function verify(e: FormEvent) {
-    e.preventDefault();
+  async function verify(event: FormEvent) {
+    event.preventDefault();
     setBusy(true);
     setStatus("");
 
@@ -96,13 +177,20 @@ export default function Home() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Verification failed.");
+
+      if (!response.ok) {
+        throw new Error(data.error || "Verification failed.");
+      }
 
       setEmployee(data.employee);
-      setStatus("Identity verified.");
+      setStatus("");
       setStatusKind("success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Verification failed.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Verification failed.",
+      );
       setStatusKind("error");
     } finally {
       setBusy(false);
@@ -111,29 +199,50 @@ export default function Home() {
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
+
     setEmployee(null);
     setEmployeeName("");
     setMobile("");
+    setRequestType(null);
     setSubmittedId("");
+    setSubmittedType(null);
     setStatus("");
   }
 
-  async function submitLeave(e: FormEvent) {
-    e.preventDefault();
+  function resetForAnotherRequest() {
+    setSubmittedId("");
+    setSubmittedType(null);
+    setRequestType(null);
+    setStatus("");
+
+    setLeaveReason("");
+    setNotify([]);
+    setAttachment(null);
+
+    setCurrentOffDate("");
+    setRequestedNewOffDate("");
+    setChangeOffReason("");
+  }
+
+  async function submitLeave(event: FormEvent) {
+    event.preventDefault();
     setBusy(true);
     setStatus("");
 
     try {
       if (!leaveType) {
-        throw new Error("No Leave Type options are currently available in Lark Base.");
+        throw new Error(
+          "No Leave Type options are currently available in Lark Base.",
+        );
       }
 
       const form = new FormData();
+
       form.set("leaveType", leaveType);
       form.set("startDate", startDate);
       form.set("endDate", endDate);
       form.set("dayType", dayType);
-      form.set("reason", reason);
+      form.set("reason", leaveReason);
 
       if (dayType === "Partial Day") {
         form.set("startTime", startTime);
@@ -141,7 +250,10 @@ export default function Home() {
       }
 
       notify.forEach((name) => form.append("notify", name));
-      if (attachment) form.set("attachment", attachment);
+
+      if (attachment) {
+        form.set("attachment", attachment);
+      }
 
       const response = await fetch("/api/leave", {
         method: "POST",
@@ -149,21 +261,73 @@ export default function Home() {
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to submit leave.");
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to submit leave request.",
+        );
+      }
 
       setSubmittedId(data.requestId);
-
-      if (data.notifyFailures?.length) {
-        setStatus(
-          `Leave submitted. Direct notification could not be delivered to: ${data.notifyFailures.join(", ")}.`,
-        );
-        setStatusKind("normal");
-      } else {
-        setStatus("Leave request submitted for approval.");
-        setStatusKind("success");
-      }
+      setSubmittedType("leave");
+      setStatus("Leave request submitted for approval.");
+      setStatusKind("success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to submit leave.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit leave request.",
+      );
+      setStatusKind("error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitChangeOff(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setStatus("");
+
+    try {
+      if (
+        requestedNewOffDate < week.start ||
+        requestedNewOffDate > week.end
+      ) {
+        throw new Error(
+          `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
+        );
+      }
+
+      const response = await fetch("/api/change-day-off", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentOffDate,
+          requestedNewOffDate,
+          reason: changeOffReason,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Unable to submit Change Day-Off request.",
+        );
+      }
+
+      setSubmittedId(data.requestId);
+      setSubmittedType("changeOff");
+      setStatus("Change Day-Off request submitted for approval.");
+      setStatusKind("success");
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit Change Day-Off request.",
+      );
       setStatusKind("error");
     } finally {
       setBusy(false);
@@ -174,7 +338,7 @@ export default function Home() {
     return (
       <main className="shell">
         <div className="wrap">
-          <div className="card">Loading Leave Requests…</div>
+          <div className="card">Loading Approvals…</div>
         </div>
       </main>
     );
@@ -184,10 +348,10 @@ export default function Home() {
     <main className="shell">
       <div className="wrap">
         <div className="brand">
-          <div className="brandMark">LR</div>
+          <div className="brandMark">A</div>
           <div>
-            <h1>Leave Requests</h1>
-            <p>Submit and route leave requests for approval.</p>
+            <h1>Approvals</h1>
+            <p>Submit and track employee requests for approval.</p>
           </div>
         </div>
 
@@ -195,7 +359,7 @@ export default function Home() {
           <div className="card">
             <h2 className="sectionTitle">Verify your identity</h2>
             <p className="muted">
-              Use the same employee record and registered mobile number used for attendance.
+              Use your employee record and registered mobile number.
             </p>
 
             <form onSubmit={verify}>
@@ -204,7 +368,9 @@ export default function Home() {
                 <input
                   className="input"
                   value={employeeName}
-                  onChange={(e) => setEmployeeName(e.target.value)}
+                  onChange={(event) =>
+                    setEmployeeName(event.target.value)
+                  }
                   placeholder="Search your name"
                   required
                 />
@@ -212,17 +378,25 @@ export default function Home() {
 
               {filteredEmployees.length > 0 && (
                 <div className="checklist">
-                  {filteredEmployees.map((x) => (
+                  {filteredEmployees.map((item) => (
                     <button
-                      key={x.employeeName}
+                      key={item.employeeName}
                       type="button"
                       className="check"
-                      onClick={() => setEmployeeName(x.employeeName)}
-                      style={{ textAlign: "left", background: "#fff", cursor: "pointer" }}
+                      onClick={() =>
+                        setEmployeeName(item.employeeName)
+                      }
+                      style={{
+                        textAlign: "left",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
                     >
                       <div>
-                        <strong>{x.employeeName}</strong>
-                        <div className="small">{x.department || "Employee"}</div>
+                        <strong>{item.employeeName}</strong>
+                        <div className="small">
+                          {item.department || "Employee"}
+                        </div>
                       </div>
                     </button>
                   ))}
@@ -230,19 +404,37 @@ export default function Home() {
               )}
 
               <label className="field">
-                <span className="label">Registered Mobile Number</span>
-                <div className="row" style={{ alignItems: "stretch", flexWrap: "nowrap" }}>
+                <span className="label">
+                  Registered Mobile Number
+                </span>
+
+                <div
+                  className="row"
+                  style={{
+                    alignItems: "stretch",
+                    flexWrap: "nowrap",
+                  }}
+                >
                   <div
                     className="input"
-                    style={{ width: 70, background: "#f8fafc", color: "#475467" }}
+                    style={{
+                      width: 70,
+                      background: "#f8fafc",
+                      color: "#475467",
+                    }}
                   >
                     +63
                   </div>
+
                   <input
                     className="input"
                     value={mobileDisplay(mobile)}
-                    onChange={(e) =>
-                      setMobile(e.target.value.replace(/\D/g, "").slice(0, 10))
+                    onChange={(event) =>
+                      setMobile(
+                        event.target.value
+                          .replace(/\D/g, "")
+                          .slice(0, 10),
+                      )
                     }
                     placeholder="917 123 4567"
                     inputMode="numeric"
@@ -277,45 +469,65 @@ export default function Home() {
         ) : submittedId ? (
           <div className="card successPanel">
             <div className="successIcon">✓</div>
-            <h2 className="sectionTitle">Leave request submitted</h2>
+
+            <h2 className="sectionTitle">
+              {submittedType === "changeOff"
+                ? "Change Day-Off request submitted"
+                : "Leave request submitted"}
+            </h2>
+
             <p className="muted">
               Your request has been sent to the{" "}
-              <strong>{employee.leaveApprovalGroup}</strong> approval group.
+              <strong>{employee.leaveApprovalGroup}</strong>{" "}
+              approval group.
             </p>
 
-            <div className="status success" style={{ margin: "18px auto", maxWidth: 440 }}>
+            <div
+              className="status success"
+              style={{
+                margin: "18px auto",
+                maxWidth: 440,
+              }}
+            >
               Request ID: <strong>{submittedId}</strong>
             </div>
 
             {status && <div className="status">{status}</div>}
 
-            <div className="row" style={{ justifyContent: "center", marginTop: 18 }}>
+            <div
+              className="row"
+              style={{
+                justifyContent: "center",
+                marginTop: 18,
+              }}
+            >
               <button
                 className="btn btnPrimary"
-                onClick={() => {
-                  setSubmittedId("");
-                  setReason("");
-                  setNotify([]);
-                  setAttachment(null);
-                }}
+                onClick={resetForAnotherRequest}
               >
-                File another leave
+                File another request
               </button>
-              <button className="btn btnGhost" onClick={logout}>
+
+              <button
+                className="btn btnGhost"
+                onClick={logout}
+              >
                 Change employee
               </button>
             </div>
           </div>
-        ) : (
+        ) : !requestType ? (
           <div className="card">
             <div className="between">
               <div>
-                <h2 className="sectionTitle">New Leave Request</h2>
+                <h2 className="sectionTitle">
+                  What would you like to request?
+                </h2>
                 <p className="muted">
-                  Your approval group is automatically taken from your employee record.
+                  Choose a request type below. Your approval group
+                  is taken automatically from your employee record.
                 </p>
               </div>
-              <span className="pill pending">Pending</span>
             </div>
 
             <div className="employeeBox">
@@ -323,15 +535,127 @@ export default function Home() {
                 <div>
                   <strong>{employee.employeeName}</strong>
                   <div className="small">
-                    {employee.employeeId} • {employee.department || "Employee"}
+                    {employee.employeeId} •{" "}
+                    {employee.department || "Employee"}
                   </div>
                 </div>
-                <button className="btn btnGhost" type="button" onClick={logout}>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={logout}
+                >
                   Not you?
                 </button>
               </div>
-              <div className="small" style={{ marginTop: 10 }}>
-                Approval Group: <strong>{employee.leaveApprovalGroup}</strong>
+
+              <div
+                className="small"
+                style={{ marginTop: 10 }}
+              >
+                Approval Group:{" "}
+                <strong>{employee.leaveApprovalGroup}</strong>
+              </div>
+            </div>
+
+            <div
+              className="grid"
+              style={{ marginTop: 18 }}
+            >
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => setRequestType("leave")}
+                style={{
+                  minHeight: 110,
+                  textAlign: "left",
+                  padding: 20,
+                }}
+              >
+                <span>
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: 18,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Leave Request
+                  </strong>
+                  <span className="small">
+                    File vacation, sick, emergency, and other
+                    available leave types.
+                  </span>
+                </span>
+              </button>
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() =>
+                  setRequestType("changeOff")
+                }
+                style={{
+                  minHeight: 110,
+                  textAlign: "left",
+                  padding: 20,
+                }}
+              >
+                <span>
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: 18,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Change Day-Off
+                  </strong>
+                  <span className="small">
+                    Request a different off-date for the current
+                    week.
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : requestType === "leave" ? (
+          <div className="card">
+            <div className="between">
+              <div>
+                <h2 className="sectionTitle">
+                  New Leave Request
+                </h2>
+                <p className="muted">
+                  Your approval group is automatically taken from
+                  your employee record.
+                </p>
+              </div>
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => {
+                  setRequestType(null);
+                  setStatus("");
+                }}
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="employeeBox">
+              <strong>{employee.employeeName}</strong>
+              <div className="small">
+                {employee.employeeId} •{" "}
+                {employee.department || "Employee"}
+              </div>
+              <div
+                className="small"
+                style={{ marginTop: 10 }}
+              >
+                Approval Group:{" "}
+                <strong>{employee.leaveApprovalGroup}</strong>
               </div>
             </div>
 
@@ -341,16 +665,20 @@ export default function Home() {
                 <select
                   className="select"
                   value={leaveType}
-                  onChange={(e) => setLeaveType(e.target.value)}
+                  onChange={(event) =>
+                    setLeaveType(event.target.value)
+                  }
                   required
                   disabled={leaveTypes.length === 0}
                 >
                   {leaveTypes.length === 0 ? (
-                    <option value="">No leave types available</option>
+                    <option value="">
+                      No leave types available
+                    </option>
                   ) : (
-                    leaveTypes.map((x) => (
-                      <option key={x} value={x}>
-                        {x}
+                    leaveTypes.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
                       </option>
                     ))
                   )}
@@ -364,7 +692,9 @@ export default function Home() {
                     className="input"
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(event) =>
+                      setStartDate(event.target.value)
+                    }
                     required
                   />
                 </label>
@@ -375,7 +705,9 @@ export default function Home() {
                     className="input"
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(event) =>
+                      setEndDate(event.target.value)
+                    }
                     required
                   />
                 </label>
@@ -386,8 +718,12 @@ export default function Home() {
                 <select
                   className="select"
                   value={dayType}
-                  onChange={(e) =>
-                    setDayType(e.target.value as "Full Day" | "Partial Day")
+                  onChange={(event) =>
+                    setDayType(
+                      event.target.value as
+                        | "Full Day"
+                        | "Partial Day",
+                    )
                   }
                 >
                   <option>Full Day</option>
@@ -398,23 +734,31 @@ export default function Home() {
               {dayType === "Partial Day" && (
                 <div className="grid">
                   <label className="field">
-                    <span className="label">Start Time *</span>
+                    <span className="label">
+                      Start Time *
+                    </span>
                     <input
                       className="input"
                       type="time"
                       value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
+                      onChange={(event) =>
+                        setStartTime(event.target.value)
+                      }
                       required
                     />
                   </label>
 
                   <label className="field">
-                    <span className="label">End Time *</span>
+                    <span className="label">
+                      End Time *
+                    </span>
                     <input
                       className="input"
                       type="time"
                       value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
+                      onChange={(event) =>
+                        setEndTime(event.target.value)
+                      }
                       required
                     />
                   </label>
@@ -422,11 +766,15 @@ export default function Home() {
               )}
 
               <label className="field">
-                <span className="label">Reason for Leave *</span>
+                <span className="label">
+                  Reason for Leave *
+                </span>
                 <textarea
                   className="textarea"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  value={leaveReason}
+                  onChange={(event) =>
+                    setLeaveReason(event.target.value)
+                  }
                   placeholder="Enter the reason for your leave request"
                   required
                 />
@@ -437,9 +785,16 @@ export default function Home() {
                 <input
                   className="input"
                   type="file"
-                  onChange={(e) => setAttachment(e.target.files?.[0] || null)}
+                  onChange={(event) =>
+                    setAttachment(
+                      event.target.files?.[0] || null,
+                    )
+                  }
                 />
-                <div className="small" style={{ marginTop: 5 }}>
+                <div
+                  className="small"
+                  style={{ marginTop: 5 }}
+                >
                   Optional. Maximum 10 MB.
                 </div>
               </label>
@@ -448,20 +803,32 @@ export default function Home() {
                 <div className="field">
                   <span className="label">Notify</span>
                   <div className="small">
-                    Optional. Selected people receive a direct Lark notification only.
+                    Optional. Selected people receive a direct
+                    Lark notification only.
                   </div>
 
                   <div className="checklist">
                     {contacts.map((contact) => (
-                      <label className="check" key={contact.name}>
+                      <label
+                        className="check"
+                        key={contact.name}
+                      >
                         <input
                           type="checkbox"
-                          checked={notify.includes(contact.name)}
-                          onChange={(e) =>
-                            setNotify((prev) =>
-                              e.target.checked
-                                ? [...prev, contact.name]
-                                : prev.filter((x) => x !== contact.name),
+                          checked={notify.includes(
+                            contact.name,
+                          )}
+                          onChange={(event) =>
+                            setNotify((previous) =>
+                              event.target.checked
+                                ? [
+                                    ...previous,
+                                    contact.name,
+                                  ]
+                                : previous.filter(
+                                    (item) =>
+                                      item !== contact.name,
+                                  ),
                             )
                           }
                         />
@@ -479,7 +846,143 @@ export default function Home() {
                 disabled={busy}
                 style={{ width: "100%" }}
               >
-                {busy ? "Submitting…" : "Submit Leave Request"}
+                {busy
+                  ? "Submitting…"
+                  : "Submit Leave Request"}
+              </button>
+            </form>
+
+            {status && (
+              <div
+                className={`status ${
+                  statusKind === "error"
+                    ? "error"
+                    : statusKind === "success"
+                      ? "success"
+                      : ""
+                }`}
+              >
+                {status}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="card">
+            <div className="between">
+              <div>
+                <h2 className="sectionTitle">
+                  Change Off-Date Request
+                </h2>
+                <p className="muted">
+                  Requested new off-date must be within this week.
+                </p>
+              </div>
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => {
+                  setRequestType(null);
+                  setStatus("");
+                }}
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="employeeBox">
+              <strong>{employee.employeeName}</strong>
+              <div className="small">
+                {employee.employeeId} •{" "}
+                {employee.department || "Employee"}
+              </div>
+              <div
+                className="small"
+                style={{ marginTop: 10 }}
+              >
+                Approval Group:{" "}
+                <strong>{employee.leaveApprovalGroup}</strong>
+              </div>
+            </div>
+
+            <form onSubmit={submitChangeOff}>
+              <label className="field">
+                <span className="label">Employee Name</span>
+                <input
+                  className="input"
+                  value={employee.employeeName}
+                  disabled
+                />
+              </label>
+
+              <div className="grid">
+                <label className="field">
+                  <span className="label">
+                    Current Off-Date *
+                  </span>
+                  <input
+                    className="input"
+                    type="date"
+                    value={currentOffDate}
+                    onChange={(event) =>
+                      setCurrentOffDate(event.target.value)
+                    }
+                    required
+                  />
+                </label>
+
+                <label className="field">
+                  <span className="label">
+                    Requested New Off-Date *
+                  </span>
+                  <input
+                    className="input"
+                    type="date"
+                    min={week.start}
+                    max={week.end}
+                    value={requestedNewOffDate}
+                    onChange={(event) =>
+                      setRequestedNewOffDate(
+                        event.target.value,
+                      )
+                    }
+                    required
+                  />
+                  <div
+                    className="small"
+                    style={{ marginTop: 5 }}
+                  >
+                    For this week only: {week.start} to{" "}
+                    {week.end}
+                  </div>
+                </label>
+              </div>
+
+              <label className="field">
+                <span className="label">
+                  Reason for Change *
+                </span>
+                <textarea
+                  className="textarea"
+                  value={changeOffReason}
+                  onChange={(event) =>
+                    setChangeOffReason(event.target.value)
+                  }
+                  placeholder="Enter the reason for changing your off-date"
+                  required
+                />
+              </label>
+
+              <div className="divider" />
+
+              <button
+                className="btn btnPrimary"
+                disabled={busy}
+                style={{ width: "100%" }}
+              >
+                {busy
+                  ? "Submitting…"
+                  : "Submit Change Day-Off Request"}
               </button>
             </form>
 
