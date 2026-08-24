@@ -94,6 +94,7 @@ export default function Home() {
 
   const [employeeName, setEmployeeName] = useState("");
   const [mobile, setMobile] = useState("");
+  const [staySignedIn, setStaySignedIn] = useState(true);
 
   const [requestType, setRequestType] = useState<RequestType | null>(
     null,
@@ -257,6 +258,7 @@ export default function Home() {
         body: JSON.stringify({
           employeeName,
           mobileNumber: `+63${mobile.replace(/\D/g, "")}`,
+          staySignedIn,
         }),
       });
 
@@ -527,6 +529,29 @@ export default function Home() {
                     inputMode="numeric"
                     required
                   />
+                </div>
+              </label>
+
+              <label
+                className="check"
+                style={{
+                  marginTop: 16,
+                  cursor: "pointer",
+                  background: "#f8fafc",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={staySignedIn}
+                  onChange={(event) =>
+                    setStaySignedIn(event.target.checked)
+                  }
+                />
+                <div>
+                  <strong>Stay signed in</strong>
+                  <div className="small">
+                    Keep me signed in on this device.
+                  </div>
                 </div>
               </label>
 
