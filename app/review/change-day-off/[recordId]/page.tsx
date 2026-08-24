@@ -39,6 +39,7 @@ export default function ChangeDayOffReviewPage() {
     useState<ChangeOffRequest | null>(null);
   const [decision] = useState<"approve" | "reject">(preset);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [approvalComment, setApprovalComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
@@ -77,6 +78,7 @@ export default function ChangeDayOffReviewPage() {
             token,
             decision,
             rejectionReason,
+            approvalComment,
           }),
         },
       );
@@ -194,6 +196,20 @@ export default function ChangeDayOffReviewPage() {
                       ? "Confirm that you want to approve this request."
                       : "Enter the reason for rejecting this request."}
                   </p>
+
+                  {decision === "approve" && (
+                    <label className="field">
+                      <span className="label">Approval Comment</span>
+                      <textarea
+                        className="textarea"
+                        value={approvalComment}
+                        onChange={(event) =>
+                          setApprovalComment(event.target.value)
+                        }
+                        placeholder="Add an optional approval comment"
+                      />
+                    </label>
+                  )}
 
                   {decision === "reject" && (
                     <label className="field">
