@@ -117,6 +117,7 @@ export async function POST(
     }
 
     const rejectionReason = text(body.rejectionReason);
+    const approvalComment = text(body.approvalComment);
 
     if (decision === "Rejected" && rejectionReason.length < 2) {
       return NextResponse.json(
@@ -131,6 +132,7 @@ export async function POST(
       decision,
       approverName: "Approval Group",
       rejectionReason,
+      approvalComment,
     });
 
     const warnings: string[] = [];
@@ -144,6 +146,7 @@ export async function POST(
         requestId: text(f["Leave Request ID"]),
         decision,
         rejectionReason,
+        approvalComment,
       });
     } catch (error) {
       const message =
@@ -167,6 +170,7 @@ export async function POST(
         endDate: dateText(f["End Date"]),
         decision,
         rejectionReason,
+        approvalComment,
       });
     } catch (error) {
       const message =
