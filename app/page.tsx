@@ -835,11 +835,37 @@ export default function Home() {
               ))}
 
               <button
-                className="btn btnGhost"
                 type="button"
                 onClick={() => void loadHistory()}
                 disabled={historyLoading}
+                aria-label="Refresh approval history"
+                style={{
+                  marginLeft: "auto",
+                  border: "1px solid #d0d5dd",
+                  background: "#ffffff",
+                  color: "#475467",
+                  borderRadius: 10,
+                  padding: "9px 12px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  lineHeight: 1,
+                  cursor: historyLoading ? "default" : "pointer",
+                  opacity: historyLoading ? 0.6 : 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
               >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    fontSize: 17,
+                    lineHeight: 1,
+                    display: "inline-block",
+                  }}
+                >
+                  ↻
+                </span>
                 {historyLoading ? "Refreshing…" : "Refresh"}
               </button>
             </div>
@@ -1008,11 +1034,18 @@ export default function Home() {
               </label>
 
               <div className="grid">
-                <label className="field">
+                <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">Start Date *</span>
                   <input
                     className="input"
                     type="date"
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      paddingRight: 14,
+                    }}
                     value={startDate}
                     onChange={(event) =>
                       setStartDate(event.target.value)
@@ -1021,11 +1054,18 @@ export default function Home() {
                   />
                 </label>
 
-                <label className="field">
+                <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">End Date *</span>
                   <input
                     className="input"
                     type="date"
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      paddingRight: 14,
+                    }}
                     value={endDate}
                     onChange={(event) =>
                       setEndDate(event.target.value)
@@ -1238,13 +1278,20 @@ export default function Home() {
               </label>
 
               <div className="grid">
-                <label className="field">
+                <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">
                     Current Off-Date *
                   </span>
                   <input
                     className="input"
                     type="date"
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      paddingRight: 14,
+                    }}
                     value={currentOffDate}
                     onChange={(event) =>
                       setCurrentOffDate(event.target.value)
@@ -1253,13 +1300,20 @@ export default function Home() {
                   />
                 </label>
 
-                <label className="field">
+                <label className="field" style={{ minWidth: 0 }}>
                   <span className="label">
                     Requested New Off-Date *
                   </span>
                   <input
                     className="input"
                     type="date"
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      paddingRight: 14,
+                    }}
                     min={week.start}
                     max={week.end}
                     value={requestedNewOffDate}
