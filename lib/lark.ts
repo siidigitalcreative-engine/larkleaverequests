@@ -709,6 +709,113 @@ export async function createApprovalGroupRecord(
 }
 
 
+
+export type ApprovalHistoryItem = {
+  requestId: string;
+  requestType: "Leave Request" | "Change Day-Off";
+  title: string;
+  detail: string;
+  status: string;
+  submittedAt: number;
+  startDate?: number;
+  endDate?: number;
+  currentOffDate?: number;
+  requestedNewOffDate?: number;
+  rejectionReason?: string;
+};
+
+export async function listEmployeeApprovalHistory(
+  employeeId: string,
+): Promise<ApprovalHistoryItem[]> {
+  const normalizedEmployeeId = String(employeeId ?? "").trim();
+
+  if (!normalizedEmployeeId) {
+    return [];
+  }
+
+  const results: ApprovalHistoryItem[] = [];
+
+  const leaveTableId = process.env.LARK_LEAVE_TABLE_ID;
+
+  if (leaveTableId) {
+    const leaveItems = await listTableRecords(leaveTableId);
+
+    for (const item of leaveItems) {
+      const f = item?.fields ?? {};
+
+      if (
+        String(f["Employee ID"] ?? "").trim() !==
+        normalizedEmployeeId
+      ) {
+        continue;
+      }
+
+      const leaveType = String(f["Leave Type"] ?? "").trim();
+      const dayType = String(f["Day Type"] ?? "").trim();
+
+      results.push({
+        requestId: String(
+          f["Leave Request ID"] ?? f["Request ID"] ?? "",
+        ).trim(),
+        requestType: "Leave Request",
+        title: leaveType || "Leave Request",
+        detail: dayType || "Leave",
+        status: String(f["Status"] ?? "Pending").trim() || "Pending",
+        submittedAt: Number(f["Submitted At"] ?? 0) || 0,
+        startDate: Number(f["Start Date"] ?? 0) || undefined,
+        endDate: Number(f["End Date"] ?? 0) || undefined,
+        rejectionReason:
+          String(f["Rejection Reason"] ?? "").trim() || undefined,
+      });
+    }
+  }
+
+  const changeOffTableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
+
+  if (changeOffTableId) {
+    try {
+      const changeOffItems = await listTableRecords(changeOffTableId);
+
+      for (const item of changeOffItems) {
+        const f = item?.fields ?? {};
+
+        if (
+          String(f["Employee ID"] ?? "").trim() !==
+          normalizedEmployeeId
+        ) {
+          continue;
+        }
+
+        results.push({
+          requestId: String(
+            f["Change Off Request ID"] ?? f["Request ID"] ?? "",
+          ).trim(),
+          requestType: "Change Day-Off",
+          title: "Change Day-Off",
+          detail: "Off-date change",
+          status:
+            String(f["Status"] ?? "Pending").trim() || "Pending",
+          submittedAt: Number(f["Submitted At"] ?? 0) || 0,
+          currentOffDate:
+            Number(f["Current Off-Date"] ?? 0) || undefined,
+          requestedNewOffDate:
+            Number(f["Requested New Off-Date"] ?? 0) || undefined,
+          rejectionReason:
+            String(f["Rejection Reason"] ?? "").trim() || undefined,
+        });
+      }
+    } catch (error) {
+      // History should still load Leave records even if the optional
+      // Change Day-Off table is not configured or temporarily unavailable.
+      console.error("Change Day-Off history load failed:", error);
+    }
+  }
+
+  return results.sort(
+    (a, b) => (b.submittedAt || 0) - (a.submittedAt || 0),
+  );
+}
+
 export async function createChangeOffApprovalGroupRecord(
   input: ChangeOffRequestInput & {
     mainRecordId: string;
