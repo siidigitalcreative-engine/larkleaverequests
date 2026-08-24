@@ -18,7 +18,24 @@ type NotifyContact = {
   name: string;
 };
 
-type RequestType = "leave" | "changeOff";
+type RequestType = "leave" | "changeOff" | "history";
+
+
+type ApprovalHistoryItem = {
+  requestId: string;
+  requestType: "Leave Request" | "Change Day-Off";
+  title: string;
+  detail: string;
+  status: string;
+  submittedAt: number;
+  startDate?: number;
+  endDate?: number;
+  currentOffDate?: number;
+  requestedNewOffDate?: number;
+  rejectionReason?: string;
+};
+
+type HistoryFilter = "All" | "Pending" | "Approved" | "Rejected";
 
 function mobileDisplay(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -54,6 +71,18 @@ function currentWeekBounds() {
     start: ymdLocal(monday),
     end: ymdLocal(sunday),
   };
+}
+
+
+function historyDate(value?: number) {
+  if (!value) return "—";
+
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  }).format(new Date(value));
 }
 
 export default function Home() {
@@ -96,6 +125,14 @@ export default function Home() {
   const [submittedId, setSubmittedId] = useState("");
   const [submittedType, setSubmittedType] =
     useState<RequestType | null>(null);
+
+  const [historyItems, setHistoryItems] = useState<
+    ApprovalHistoryItem[]
+  >([]);
+  const [historyFilter, setHistoryFilter] =
+    useState<HistoryFilter>("All");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const week = useMemo(() => currentWeekBounds(), []);
 
@@ -161,6 +198,44 @@ export default function Home() {
       .slice(0, 8);
   }, [employeeName, employees]);
 
+  const filteredHistory = useMemo(() => {
+    if (historyFilter === "All") return historyItems;
+
+    return historyItems.filter(
+      (item) => item.status === historyFilter,
+    );
+  }, [historyFilter, historyItems]);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    setHistoryError("");
+
+    try {
+      const response = await fetch("/api/approval-history", {
+        cache: "no-store",
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load approval history.",
+        );
+      }
+
+      setHistoryItems(
+        Array.isArray(data.items) ? data.items : [],
+      );
+    } catch (error) {
+      setHistoryError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load approval history.",
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   async function verify(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -206,6 +281,9 @@ export default function Home() {
     setRequestType(null);
     setSubmittedId("");
     setSubmittedType(null);
+    setHistoryItems([]);
+    setHistoryFilter("All");
+    setHistoryError("");
     setStatus("");
   }
 
@@ -617,7 +695,208 @@ export default function Home() {
                   </span>
                 </span>
               </button>
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => {
+                  setRequestType("history");
+                  setHistoryFilter("All");
+                  void loadHistory();
+                }}
+                style={{
+                  minHeight: 110,
+                  textAlign: "left",
+                  padding: 20,
+                }}
+              >
+                <span>
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: 18,
+                      marginBottom: 6,
+                    }}
+                  >
+                    My Approval History
+                  </strong>
+                  <span className="small">
+                    View your previously filed requests and their
+                    current approval status.
+                  </span>
+                </span>
+              </button>
             </div>
+          </div>
+        ) : requestType === "history" ? (
+          <div className="card">
+            <div className="between">
+              <div>
+                <h2 className="sectionTitle">
+                  My Approval History
+                </h2>
+                <p className="muted">
+                  Only requests filed under your Employee ID are
+                  shown here.
+                </p>
+              </div>
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => {
+                  setRequestType(null);
+                  setHistoryError("");
+                }}
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="employeeBox">
+              <strong>{employee.employeeName}</strong>
+              <div className="small">
+                {employee.employeeId} •{" "}
+                {employee.department || "Employee"}
+              </div>
+            </div>
+
+            <div
+              className="row"
+              style={{
+                marginTop: 18,
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {(
+                [
+                  "All",
+                  "Pending",
+                  "Approved",
+                  "Rejected",
+                ] as HistoryFilter[]
+              ).map((filter) => (
+                <button
+                  key={filter}
+                  className={`btn ${
+                    historyFilter === filter
+                      ? "btnPrimary"
+                      : "btnGhost"
+                  }`}
+                  type="button"
+                  onClick={() => setHistoryFilter(filter)}
+                >
+                  {filter}
+                </button>
+              ))}
+
+              <button
+                className="btn btnGhost"
+                type="button"
+                onClick={() => void loadHistory()}
+                disabled={historyLoading}
+              >
+                {historyLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+
+            <div className="divider" />
+
+            {historyLoading && historyItems.length === 0 ? (
+              <div className="muted">
+                Loading your approval history…
+              </div>
+            ) : historyError ? (
+              <div className="status error">{historyError}</div>
+            ) : filteredHistory.length === 0 ? (
+              <div className="muted">
+                No {historyFilter === "All"
+                  ? ""
+                  : historyFilter.toLowerCase() + " "}
+                requests found.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                }}
+              >
+                {filteredHistory.map((item) => (
+                  <div
+                    key={`${item.requestType}-${item.requestId}`}
+                    className="employeeBox"
+                    style={{ margin: 0 }}
+                  >
+                    <div className="between">
+                      <div>
+                        <strong>{item.title}</strong>
+                        <div
+                          className="small"
+                          style={{ marginTop: 4 }}
+                        >
+                          {item.requestType}
+                        </div>
+                      </div>
+
+                      <span
+                        className={`pill ${item.status.toLowerCase()}`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div
+                      className="small"
+                      style={{ marginTop: 12 }}
+                    >
+                      {item.requestType === "Leave Request" ? (
+                        <>
+                          {historyDate(item.startDate)} →{" "}
+                          {historyDate(item.endDate)}
+                        </>
+                      ) : (
+                        <>
+                          {historyDate(item.currentOffDate)} →{" "}
+                          {historyDate(
+                            item.requestedNewOffDate,
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div
+                      className="small"
+                      style={{ marginTop: 6 }}
+                    >
+                      Filed: {historyDate(item.submittedAt)}
+                    </div>
+
+                    <div
+                      className="small"
+                      style={{ marginTop: 6 }}
+                    >
+                      Request ID:{" "}
+                      <strong>
+                        {item.requestId || "—"}
+                      </strong>
+                    </div>
+
+                    {item.status === "Rejected" &&
+                      item.rejectionReason && (
+                        <div
+                          className="status error"
+                          style={{ marginTop: 12 }}
+                        >
+                          Rejection Reason:{" "}
+                          {item.rejectionReason}
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : requestType === "leave" ? (
           <div className="card">
