@@ -471,7 +471,19 @@ export default function Home() {
 
         .dateNativeInput::-webkit-date-and-time-value {
           min-width: 0 !important;
+          height: 100% !important;
+          display: flex !important;
+          align-items: center !important;
           text-align: left !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+
+        .dateNativeInput::-webkit-datetime-edit {
+          display: flex !important;
+          align-items: center !important;
+          height: 100% !important;
+          padding: 0 !important;
         }
 
         @media (max-width: 640px) {
