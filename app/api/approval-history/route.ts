@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { listEmployeeApprovalHistory } from "@/lib/lark";
+import { listEmployeeOvertimeHistory } from "@/lib/overtime";
 import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
@@ -21,13 +22,22 @@ export async function GET() {
       );
     }
 
-    const items = await listEmployeeApprovalHistory(
-      session.employeeId,
+    const [existingItems, overtimeItems] =
+      await Promise.all([
+        listEmployeeApprovalHistory(session.employeeId),
+        listEmployeeOvertimeHistory(session.employeeId),
+      ]);
+
+    const items = [
+      ...existingItems,
+      ...overtimeItems,
+    ].sort(
+      (a, b) =>
+        (b.submittedAt || 0) -
+        (a.submittedAt || 0),
     );
 
-    return NextResponse.json({
-      items,
-    });
+    return NextResponse.json({ items });
   } catch (error) {
     return NextResponse.json(
       {
