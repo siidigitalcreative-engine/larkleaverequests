@@ -20,10 +20,9 @@ type NotifyContact = {
 
 type RequestType = "leave" | "changeOff" | "history";
 
-
 type ApprovalHistoryItem = {
   requestId: string;
-  requestType: "Leave Request" | "Change Day-Off";
+  requestType: "Leave Request" | "Change Day-Off" | "Overtime";
   title: string;
   detail: string;
   status: string;
@@ -32,6 +31,7 @@ type ApprovalHistoryItem = {
   endDate?: number;
   currentOffDate?: number;
   requestedNewOffDate?: number;
+  overtimeDate?: number;
   rejectionReason?: string;
 };
 
@@ -72,7 +72,6 @@ function currentWeekBounds() {
     end: ymdLocal(sunday),
   };
 }
-
 
 function historyDate(value?: number) {
   if (!value) return "—";
@@ -506,954 +505,1081 @@ export default function Home() {
       `}</style>
 
       <main className="shell">
-      <div className="wrap">
-        <div className="brand">
-          <div className="brandMark">A</div>
-          <div>
-            <h1>Approvals</h1>
-            <p>Submit and track employee requests for approval.</p>
+        <div className="wrap">
+          <div className="brand">
+            <div className="brandMark">A</div>
+            <div>
+              <h1>Approvals</h1>
+              <p>Submit and track employee requests for approval.</p>
+            </div>
           </div>
-        </div>
 
-        {!employee ? (
-          <div className="card">
-            <h2 className="sectionTitle">Verify your identity</h2>
-            <p className="muted">
-              Use your employee record and registered mobile number.
-            </p>
+          {!employee ? (
+            <div className="card">
+              <h2 className="sectionTitle">Verify your identity</h2>
+              <p className="muted">
+                Use your employee record and registered mobile number.
+              </p>
 
-            <form onSubmit={verify}>
-              <label className="field">
-                <span className="label">Employee Name</span>
-                <input
-                  className="input"
-                  value={employeeName}
-                  onChange={(event) =>
-                    setEmployeeName(event.target.value)
-                  }
-                  placeholder="Search your name"
-                  required
-                />
-              </label>
-
-              {filteredEmployees.length > 0 && (
-                <div className="checklist">
-                  {filteredEmployees.map((item) => (
-                    <button
-                      key={item.employeeName}
-                      type="button"
-                      className="check"
-                      onClick={() =>
-                        setEmployeeName(item.employeeName)
-                      }
-                      style={{
-                        textAlign: "left",
-                        background: "#fff",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div>
-                        <strong>{item.employeeName}</strong>
-                        <div className="small">
-                          {item.department || "Employee"}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <label className="field">
-                <span className="label">
-                  Registered Mobile Number
-                </span>
-
-                <div
-                  className="row"
-                  style={{
-                    alignItems: "stretch",
-                    flexWrap: "nowrap",
-                  }}
-                >
-                  <div
-                    className="input"
-                    style={{
-                      width: 70,
-                      background: "#f8fafc",
-                      color: "#475467",
-                    }}
-                  >
-                    +63
-                  </div>
-
+              <form onSubmit={verify}>
+                <label className="field">
+                  <span className="label">Employee Name</span>
                   <input
                     className="input"
-                    value={mobileDisplay(mobile)}
+                    value={employeeName}
                     onChange={(event) =>
-                      setMobile(
-                        event.target.value
-                          .replace(/\D/g, "")
-                          .slice(0, 10),
-                      )
+                      setEmployeeName(event.target.value)
                     }
-                    placeholder="917 123 4567"
-                    inputMode="numeric"
+                    placeholder="Search your name"
                     required
                   />
-                </div>
-              </label>
+                </label>
 
-              <label
-                className="check"
+                {filteredEmployees.length > 0 && (
+                  <div className="checklist">
+                    {filteredEmployees.map((item) => (
+                      <button
+                        key={item.employeeName}
+                        type="button"
+                        className="check"
+                        onClick={() =>
+                          setEmployeeName(item.employeeName)
+                        }
+                        style={{
+                          textAlign: "left",
+                          background: "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div>
+                          <strong>{item.employeeName}</strong>
+                          <div className="small">
+                            {item.department || "Employee"}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <label className="field">
+                  <span className="label">
+                    Registered Mobile Number
+                  </span>
+
+                  <div
+                    className="row"
+                    style={{
+                      alignItems: "stretch",
+                      flexWrap: "nowrap",
+                    }}
+                  >
+                    <div
+                      className="input"
+                      style={{
+                        width: 70,
+                        background: "#f8fafc",
+                        color: "#475467",
+                      }}
+                    >
+                      +63
+                    </div>
+
+                    <input
+                      className="input"
+                      value={mobileDisplay(mobile)}
+                      onChange={(event) =>
+                        setMobile(
+                          event.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 10),
+                        )
+                      }
+                      placeholder="917 123 4567"
+                      inputMode="numeric"
+                      required
+                    />
+                  </div>
+                </label>
+
+                <label
+                  className="check"
+                  style={{
+                    marginTop: 16,
+                    cursor: "pointer",
+                    background: "#f8fafc",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={staySignedIn}
+                    onChange={(event) =>
+                      setStaySignedIn(event.target.checked)
+                    }
+                  />
+                  <div>
+                    <strong>Stay signed in</strong>
+                    <div className="small">
+                      Keep me signed in on this device.
+                    </div>
+                  </div>
+                </label>
+
+                <button
+                  className="btn btnPrimary"
+                  disabled={busy}
+                  style={{ width: "100%", marginTop: 18 }}
+                >
+                  {busy ? "Verifying…" : "Continue"}
+                </button>
+              </form>
+
+              {status && (
+                <div
+                  className={`status ${
+                    statusKind === "error"
+                      ? "error"
+                      : statusKind === "success"
+                        ? "success"
+                        : ""
+                  }`}
+                >
+                  {status}
+                </div>
+              )}
+            </div>
+          ) : submittedId ? (
+            <div className="card successPanel">
+              <div className="successIcon">✓</div>
+
+              <h2 className="sectionTitle">
+                {submittedType === "changeOff"
+                  ? "Change Day-Off request submitted"
+                  : "Leave request submitted"}
+              </h2>
+
+              <p className="muted">
+                Your request has been sent to the{" "}
+                <strong>{employee.leaveApprovalGroup}</strong>{" "}
+                approval group.
+              </p>
+
+              <div
+                className="status success"
                 style={{
-                  marginTop: 16,
-                  cursor: "pointer",
-                  background: "#f8fafc",
+                  margin: "18px auto",
+                  maxWidth: 440,
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={staySignedIn}
-                  onChange={(event) =>
-                    setStaySignedIn(event.target.checked)
-                  }
-                />
-                <div>
-                  <strong>Stay signed in</strong>
-                  <div className="small">
-                    Keep me signed in on this device.
-                  </div>
-                </div>
-              </label>
+                Request ID: <strong>{submittedId}</strong>
+              </div>
 
-              <button
-                className="btn btnPrimary"
-                disabled={busy}
-                style={{ width: "100%", marginTop: 18 }}
-              >
-                {busy ? "Verifying…" : "Continue"}
-              </button>
-            </form>
+              {status && <div className="status">{status}</div>}
 
-            {status && (
               <div
-                className={`status ${
-                  statusKind === "error"
-                    ? "error"
-                    : statusKind === "success"
-                      ? "success"
-                      : ""
-                }`}
+                className="row"
+                style={{
+                  justifyContent: "center",
+                  marginTop: 18,
+                }}
               >
-                {status}
-              </div>
-            )}
-          </div>
-        ) : submittedId ? (
-          <div className="card successPanel">
-            <div className="successIcon">✓</div>
+                <button
+                  className="btn btnPrimary"
+                  onClick={resetForAnotherRequest}
+                >
+                  File another request
+                </button>
 
-            <h2 className="sectionTitle">
-              {submittedType === "changeOff"
-                ? "Change Day-Off request submitted"
-                : "Leave request submitted"}
-            </h2>
-
-            <p className="muted">
-              Your request has been sent to the{" "}
-              <strong>{employee.leaveApprovalGroup}</strong>{" "}
-              approval group.
-            </p>
-
-            <div
-              className="status success"
-              style={{
-                margin: "18px auto",
-                maxWidth: 440,
-              }}
-            >
-              Request ID: <strong>{submittedId}</strong>
-            </div>
-
-            {status && <div className="status">{status}</div>}
-
-            <div
-              className="row"
-              style={{
-                justifyContent: "center",
-                marginTop: 18,
-              }}
-            >
-              <button
-                className="btn btnPrimary"
-                onClick={resetForAnotherRequest}
-              >
-                File another request
-              </button>
-
-              <button
-                className="btn btnGhost"
-                onClick={logout}
-              >
-                Change employee
-              </button>
-            </div>
-          </div>
-        ) : !requestType ? (
-          <div className="card">
-            <div className="between">
-              <div>
-                <h2 className="sectionTitle">
-                  What would you like to request?
-                </h2>
-                <p className="muted">
-                  Choose a request type below. Your approval group
-                  is taken automatically from your employee record.
-                </p>
+                <button
+                  className="btn btnGhost"
+                  onClick={logout}
+                >
+                  Change employee
+                </button>
               </div>
             </div>
-
-            <div className="employeeBox">
+          ) : !requestType ? (
+            <div className="card">
               <div className="between">
                 <div>
-                  <strong>{employee.employeeName}</strong>
-                  <div className="small">
-                    {employee.employeeId} •{" "}
-                    {employee.department || "Employee"}
+                  <h2 className="sectionTitle">
+                    What would you like to request?
+                  </h2>
+                  <p className="muted">
+                    Choose a request type below. Your approval group
+                    is taken automatically from your employee record.
+                  </p>
+                </div>
+              </div>
+
+              <div className="employeeBox">
+                <div className="between">
+                  <div>
+                    <strong>{employee.employeeName}</strong>
+                    <div className="small">
+                      {employee.employeeId} •{" "}
+                      {employee.department || "Employee"}
+                    </div>
                   </div>
+
+                  <button
+                    className="btn btnGhost"
+                    type="button"
+                    onClick={logout}
+                  >
+                    Not you?
+                  </button>
+                </div>
+
+                <div
+                  className="small"
+                  style={{ marginTop: 10 }}
+                >
+                  Approval Group:{" "}
+                  <strong>{employee.leaveApprovalGroup}</strong>
+                </div>
+              </div>
+
+              <div
+                className="grid"
+                style={{ marginTop: 18 }}
+              >
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => setRequestType("leave")}
+                  style={{
+                    minHeight: 110,
+                    textAlign: "left",
+                    padding: 20,
+                    background: "#eef4ff",
+                    border: "1px solid #c7d7fe",
+                    color: "#1849a9",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Leave Request
+                    </strong>
+                    <span
+                      className="small"
+                      style={{ color: "#475467" }}
+                    >
+                      File vacation, sick, emergency, and other
+                      available leave types.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() =>
+                    setRequestType("changeOff")
+                  }
+                  style={{
+                    minHeight: 110,
+                    textAlign: "left",
+                    padding: 20,
+                    background: "#fff7e8",
+                    border: "1px solid #fedf89",
+                    color: "#b54708",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Change Day-Off
+                    </strong>
+                    <span
+                      className="small"
+                      style={{ color: "#475467" }}
+                    >
+                      Request a different off-date for the current
+                      week.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    window.location.href = "/overtime";
+                  }}
+                  style={{
+                    minHeight: 110,
+                    textAlign: "left",
+                    padding: 20,
+                    background: "#ecfdf3",
+                    border: "1px solid #abefc6",
+                    color: "#067647",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Overtime
+                    </strong>
+                    <span
+                      className="small"
+                      style={{ color: "#475467" }}
+                    >
+                      File overtime hours and select your
+                      compensation method.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    setRequestType("history");
+                    setHistoryFilter("All");
+                    void loadHistory();
+                  }}
+                  style={{
+                    minHeight: 110,
+                    textAlign: "left",
+                    padding: 20,
+                    background: "#f4f3ff",
+                    border: "1px solid #d9d6fe",
+                    color: "#5925dc",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      My Approval History
+                    </strong>
+                    <span
+                      className="small"
+                      style={{ color: "#475467" }}
+                    >
+                      View your previously filed requests and their
+                      current approval status.
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          ) : requestType === "history" ? (
+            <div className="card">
+              <div className="between">
+                <div>
+                  <h2 className="sectionTitle">
+                    My Approval History
+                  </h2>
+                  <p className="muted">
+                    Only requests filed under your Employee ID are
+                    shown here.
+                  </p>
                 </div>
 
                 <button
                   className="btn btnGhost"
                   type="button"
-                  onClick={logout}
-                >
-                  Not you?
-                </button>
-              </div>
-
-              <div
-                className="small"
-                style={{ marginTop: 10 }}
-              >
-                Approval Group:{" "}
-                <strong>{employee.leaveApprovalGroup}</strong>
-              </div>
-            </div>
-
-            <div
-              className="grid"
-              style={{ marginTop: 18 }}
-            >
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() => setRequestType("leave")}
-                style={{
-                  minHeight: 110,
-                  textAlign: "left",
-                  padding: 20,
-                  background: "#eef4ff",
-                  border: "1px solid #c7d7fe",
-                  color: "#1849a9",
-                }}
-              >
-                <span>
-                  <strong
-                    style={{
-                      display: "block",
-                      fontSize: 18,
-                      marginBottom: 6,
-                    }}
-                  >
-                    Leave Request
-                  </strong>
-                  <span className="small" style={{ color: "#475467" }}>
-                    File vacation, sick, emergency, and other
-                    available leave types.
-                  </span>
-                </span>
-              </button>
-
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() =>
-                  setRequestType("changeOff")
-                }
-                style={{
-                  minHeight: 110,
-                  textAlign: "left",
-                  padding: 20,
-                  background: "#fff7e8",
-                  border: "1px solid #fedf89",
-                  color: "#b54708",
-                }}
-              >
-                <span>
-                  <strong
-                    style={{
-                      display: "block",
-                      fontSize: 18,
-                      marginBottom: 6,
-                    }}
-                  >
-                    Change Day-Off
-                  </strong>
-                  <span className="small" style={{ color: "#475467" }}>
-                    Request a different off-date for the current
-                    week.
-                  </span>
-                </span>
-              </button>
-
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() => {
-                  setRequestType("history");
-                  setHistoryFilter("All");
-                  void loadHistory();
-                }}
-                style={{
-                  minHeight: 110,
-                  textAlign: "left",
-                  padding: 20,
-                  background: "#f4f3ff",
-                  border: "1px solid #d9d6fe",
-                  color: "#5925dc",
-                }}
-              >
-                <span>
-                  <strong
-                    style={{
-                      display: "block",
-                      fontSize: 18,
-                      marginBottom: 6,
-                    }}
-                  >
-                    My Approval History
-                  </strong>
-                  <span className="small" style={{ color: "#475467" }}>
-                    View your previously filed requests and their
-                    current approval status.
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
-        ) : requestType === "history" ? (
-          <div className="card">
-            <div className="between">
-              <div>
-                <h2 className="sectionTitle">
-                  My Approval History
-                </h2>
-                <p className="muted">
-                  Only requests filed under your Employee ID are
-                  shown here.
-                </p>
-              </div>
-
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() => {
-                  setRequestType(null);
-                  setHistoryError("");
-                }}
-              >
-                Back
-              </button>
-            </div>
-
-            <div className="employeeBox">
-              <strong>{employee.employeeName}</strong>
-              <div className="small">
-                {employee.employeeId} •{" "}
-                {employee.department || "Employee"}
-              </div>
-            </div>
-
-            <div
-              className="between"
-              style={{
-                marginTop: 18,
-                marginBottom: 10,
-                alignItems: "center",
-              }}
-            >
-              <div className="small" style={{ fontWeight: 700 }}>
-                Filter requests
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void loadHistory()}
-                disabled={historyLoading}
-                aria-label="Refresh approval history"
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#475467",
-                  padding: "6px 2px",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: historyLoading ? "default" : "pointer",
-                  opacity: historyLoading ? 0.6 : 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <span
-                  aria-hidden="true"
-                  style={{
-                    fontSize: 17,
-                    lineHeight: 1,
-                    display: "inline-block",
+                  onClick={() => {
+                    setRequestType(null);
+                    setHistoryError("");
                   }}
                 >
-                  ↻
-                </span>
-                {historyLoading ? "Refreshing…" : "Refresh"}
-              </button>
-            </div>
-
-            <div
-              className="row"
-              style={{
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              {(
-                [
-                  "All",
-                  "Pending",
-                  "Approved",
-                  "Rejected",
-                ] as HistoryFilter[]
-              ).map((filter) => (
-                <button
-                  key={filter}
-                  className={`btn ${
-                    historyFilter === filter
-                      ? "btnPrimary"
-                      : "btnGhost"
-                  }`}
-                  type="button"
-                  onClick={() => setHistoryFilter(filter)}
-                >
-                  {filter}
+                  Back
                 </button>
-              ))}
-            </div>
-
-            <div className="divider" />
-
-            {historyLoading && historyItems.length === 0 ? (
-              <div className="muted">
-                Loading your approval history…
-              </div>
-            ) : historyError ? (
-              <div className="status error">{historyError}</div>
-            ) : filteredHistory.length === 0 ? (
-              <div className="muted">
-                No {historyFilter === "All"
-                  ? ""
-                  : historyFilter.toLowerCase() + " "}
-                requests found.
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 12,
-                }}
-              >
-                {filteredHistory.map((item) => (
-                  <div
-                    key={`${item.requestType}-${item.requestId}`}
-                    className="employeeBox"
-                    style={{ margin: 0 }}
-                  >
-                    <div className="between">
-                      <div>
-                        <strong>{item.title}</strong>
-                        <div
-                          className="small"
-                          style={{ marginTop: 4 }}
-                        >
-                          {item.requestType}
-                        </div>
-                      </div>
-
-                      <span
-                        className={`pill ${item.status.toLowerCase()}`}
-                      >
-                        {item.status}
-                      </span>
-                    </div>
-
-                    <div
-                      className="small"
-                      style={{ marginTop: 12 }}
-                    >
-                      {item.requestType === "Leave Request" ? (
-                        <>
-                          {historyDate(item.startDate)} →{" "}
-                          {historyDate(item.endDate)}
-                        </>
-                      ) : (
-                        <>
-                          {historyDate(item.currentOffDate)} →{" "}
-                          {historyDate(
-                            item.requestedNewOffDate,
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    <div
-                      className="small"
-                      style={{ marginTop: 6 }}
-                    >
-                      Filed: {historyDate(item.submittedAt)}
-                    </div>
-
-                    <div
-                      className="small"
-                      style={{ marginTop: 6 }}
-                    >
-                      Request ID:{" "}
-                      <strong>
-                        {item.requestId || "—"}
-                      </strong>
-                    </div>
-
-                    {item.status === "Rejected" &&
-                      item.rejectionReason && (
-                        <div
-                          className="status error"
-                          style={{ marginTop: 12 }}
-                        >
-                          Rejection Reason:{" "}
-                          {item.rejectionReason}
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : requestType === "leave" ? (
-          <div className="card">
-            <div className="between">
-              <div>
-                <h2 className="sectionTitle">
-                  New Leave Request
-                </h2>
-                <p className="muted">
-                  Your approval group is automatically taken from
-                  your employee record.
-                </p>
               </div>
 
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() => {
-                  setRequestType(null);
-                  setStatus("");
-                }}
-              >
-                Back
-              </button>
-            </div>
-
-            <div className="employeeBox">
-              <strong>{employee.employeeName}</strong>
-              <div className="small">
-                {employee.employeeId} •{" "}
-                {employee.department || "Employee"}
-              </div>
-              <div
-                className="small"
-                style={{ marginTop: 10 }}
-              >
-                Approval Group:{" "}
-                <strong>{employee.leaveApprovalGroup}</strong>
-              </div>
-            </div>
-
-            <form onSubmit={submitLeave}>
-              <label className="field">
-                <span className="label">Leave Type *</span>
-                <select
-                  className="select"
-                  value={leaveType}
-                  onChange={(event) =>
-                    setLeaveType(event.target.value)
-                  }
-                  required
-                  disabled={leaveTypes.length === 0}
-                >
-                  {leaveTypes.length === 0 ? (
-                    <option value="">
-                      No leave types available
-                    </option>
-                  ) : (
-                    leaveTypes.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-
-              <div className="grid">
-                <label className="field" style={{ minWidth: 0 }}>
-                  <span className="label">Start Date *</span>
-                  <div className="dateInputShell">
-                    <input
-                      className="dateNativeInput"
-                      type="date"                    style={{
-                      width: "100%",
-                      minWidth: 0,
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                      value={startDate}                    onChange={(event) =>
-                      setStartDate(event.target.value)
-                    }
-                    required
-                    />
-                  </div>
-                </label>
-
-                <label className="field" style={{ minWidth: 0 }}>
-                  <span className="label">End Date *</span>
-                  <div className="dateInputShell">
-                    <input
-                      className="dateNativeInput"
-                      type="date"                    style={{
-                      width: "100%",
-                      minWidth: 0,
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                      value={endDate}                    onChange={(event) =>
-                      setEndDate(event.target.value)
-                    }
-                    required
-                    />
-                  </div>
-                </label>
-              </div>
-
-              <label className="field">
-                <span className="label">Day Type *</span>
-                <select
-                  className="select"
-                  value={dayType}
-                  onChange={(event) =>
-                    setDayType(
-                      event.target.value as
-                        | "Full Day"
-                        | "Partial Day",
-                    )
-                  }
-                >
-                  <option>Full Day</option>
-                  <option>Partial Day</option>
-                </select>
-              </label>
-
-              {dayType === "Partial Day" && (
-                <div className="grid">
-                  <label className="field">
-                    <span className="label">
-                      Start Time *
-                    </span>
-                    <input
-                      className="input"
-                      type="time"
-                      value={startTime}
-                      onChange={(event) =>
-                        setStartTime(event.target.value)
-                      }
-                      required
-                    />
-                  </label>
-
-                  <label className="field">
-                    <span className="label">
-                      End Time *
-                    </span>
-                    <input
-                      className="input"
-                      type="time"
-                      value={endTime}
-                      onChange={(event) =>
-                        setEndTime(event.target.value)
-                      }
-                      required
-                    />
-                  </label>
+              <div className="employeeBox">
+                <strong>{employee.employeeName}</strong>
+                <div className="small">
+                  {employee.employeeId} •{" "}
+                  {employee.department || "Employee"}
                 </div>
-              )}
+              </div>
 
-              <label className="field">
-                <span className="label">
-                  Reason for Leave *
-                </span>
-                <textarea
-                  className="textarea"
-                  value={leaveReason}
-                  onChange={(event) =>
-                    setLeaveReason(event.target.value)
-                  }
-                  placeholder="Enter the reason for your leave request"
-                  required
-                />
-              </label>
-
-              <label className="field">
-                <span className="label">Attachment</span>
-                <input
-                  className="input"
-                  type="file"
-                  onChange={(event) =>
-                    setAttachment(
-                      event.target.files?.[0] || null,
-                    )
-                  }
-                />
+              <div
+                className="between"
+                style={{
+                  marginTop: 18,
+                  marginBottom: 10,
+                  alignItems: "center",
+                }}
+              >
                 <div
                   className="small"
-                  style={{ marginTop: 5 }}
+                  style={{ fontWeight: 700 }}
                 >
-                  Optional. Maximum 10 MB.
+                  Filter requests
                 </div>
-              </label>
 
-              {contacts.length > 0 && (
-                <div className="field">
-                  <span className="label">Notify</span>
-                  <div className="small">
-                    Optional. Selected people receive a direct
-                    Lark notification only.
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => void loadHistory()}
+                  disabled={historyLoading}
+                  aria-label="Refresh approval history"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "#475467",
+                    padding: "6px 2px",
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: historyLoading
+                      ? "default"
+                      : "pointer",
+                    opacity: historyLoading ? 0.6 : 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      fontSize: 17,
+                      lineHeight: 1,
+                      display: "inline-block",
+                    }}
+                  >
+                    ↻
+                  </span>
+                  {historyLoading
+                    ? "Refreshing…"
+                    : "Refresh"}
+                </button>
+              </div>
 
-                  <div className="checklist">
-                    {contacts.map((contact) => (
-                      <label
-                        className="check"
-                        key={contact.name}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={notify.includes(
-                            contact.name,
-                          )}
-                          onChange={(event) =>
-                            setNotify((previous) =>
-                              event.target.checked
-                                ? [
-                                    ...previous,
-                                    contact.name,
-                                  ]
-                                : previous.filter(
-                                    (item) =>
-                                      item !== contact.name,
-                                  ),
-                            )
-                          }
-                        />
-                        <span>{contact.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div
+                className="row"
+                style={{
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {(
+                  [
+                    "All",
+                    "Pending",
+                    "Approved",
+                    "Rejected",
+                  ] as HistoryFilter[]
+                ).map((filter) => (
+                  <button
+                    key={filter}
+                    className={`btn ${
+                      historyFilter === filter
+                        ? "btnPrimary"
+                        : "btnGhost"
+                    }`}
+                    type="button"
+                    onClick={() =>
+                      setHistoryFilter(filter)
+                    }
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
 
               <div className="divider" />
 
-              <button
-                className="btn btnPrimary"
-                disabled={busy}
-                style={{ width: "100%" }}
-              >
-                {busy
-                  ? "Submitting…"
-                  : "Submit Leave Request"}
-              </button>
-            </form>
+              {historyLoading &&
+              historyItems.length === 0 ? (
+                <div className="muted">
+                  Loading your approval history…
+                </div>
+              ) : historyError ? (
+                <div className="status error">
+                  {historyError}
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="muted">
+                  No{" "}
+                  {historyFilter === "All"
+                    ? ""
+                    : historyFilter.toLowerCase() + " "}
+                  requests found.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  {filteredHistory.map((item) => (
+                    <div
+                      key={`${item.requestType}-${item.requestId}`}
+                      className="employeeBox"
+                      style={{ margin: 0 }}
+                    >
+                      <div className="between">
+                        <div>
+                          <strong>{item.title}</strong>
+                          <div
+                            className="small"
+                            style={{ marginTop: 4 }}
+                          >
+                            {item.requestType}
+                          </div>
+                        </div>
 
-            {status && (
-              <div
-                className={`status ${
-                  statusKind === "error"
-                    ? "error"
-                    : statusKind === "success"
-                      ? "success"
-                      : ""
-                }`}
-              >
-                {status}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="card">
-            <div className="between">
-              <div>
-                <h2 className="sectionTitle">
-                  Change Off-Date Request
-                </h2>
-                <p className="muted">
-                  Requested new off-date must be within this week.
-                </p>
-              </div>
+                        <span
+                          className={`pill ${item.status.toLowerCase()}`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
 
-              <button
-                className="btn btnGhost"
-                type="button"
-                onClick={() => {
-                  setRequestType(null);
-                  setStatus("");
-                }}
-              >
-                Back
-              </button>
+                      <div
+                        className="small"
+                        style={{ marginTop: 12 }}
+                      >
+                        {item.requestType ===
+                        "Leave Request" ? (
+                          <>
+                            {historyDate(
+                              item.startDate,
+                            )}{" "}
+                            →{" "}
+                            {historyDate(item.endDate)}
+                          </>
+                        ) : item.requestType ===
+                          "Overtime" ? (
+                          <>
+                            {historyDate(
+                              item.overtimeDate,
+                            )}
+                            {item.detail
+                              ? ` • ${item.detail}`
+                              : ""}
+                          </>
+                        ) : (
+                          <>
+                            {historyDate(
+                              item.currentOffDate,
+                            )}{" "}
+                            →{" "}
+                            {historyDate(
+                              item.requestedNewOffDate,
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <div
+                        className="small"
+                        style={{ marginTop: 6 }}
+                      >
+                        Filed:{" "}
+                        {historyDate(item.submittedAt)}
+                      </div>
+
+                      <div
+                        className="small"
+                        style={{ marginTop: 6 }}
+                      >
+                        Request ID:{" "}
+                        <strong>
+                          {item.requestId || "—"}
+                        </strong>
+                      </div>
+
+                      {item.status === "Rejected" &&
+                        item.rejectionReason && (
+                          <div
+                            className="status error"
+                            style={{ marginTop: 12 }}
+                          >
+                            Rejection Reason:{" "}
+                            {item.rejectionReason}
+                          </div>
+                        )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          ) : requestType === "leave" ? (
+            <div className="card">
+              <div className="between">
+                <div>
+                  <h2 className="sectionTitle">
+                    New Leave Request
+                  </h2>
+                  <p className="muted">
+                    Your approval group is automatically taken from
+                    your employee record.
+                  </p>
+                </div>
 
-            <div className="employeeBox">
-              <strong>{employee.employeeName}</strong>
-              <div className="small">
-                {employee.employeeId} •{" "}
-                {employee.department || "Employee"}
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    setRequestType(null);
+                    setStatus("");
+                  }}
+                >
+                  Back
+                </button>
               </div>
-              <div
-                className="small"
-                style={{ marginTop: 10 }}
-              >
-                Approval Group:{" "}
-                <strong>{employee.leaveApprovalGroup}</strong>
+
+              <div className="employeeBox">
+                <strong>{employee.employeeName}</strong>
+                <div className="small">
+                  {employee.employeeId} •{" "}
+                  {employee.department || "Employee"}
+                </div>
+                <div
+                  className="small"
+                  style={{ marginTop: 10 }}
+                >
+                  Approval Group:{" "}
+                  <strong>
+                    {employee.leaveApprovalGroup}
+                  </strong>
+                </div>
               </div>
-            </div>
 
-            <form onSubmit={submitChangeOff}>
-              <label className="field">
-                <span className="label">Employee Name</span>
-                <input
-                  className="input"
-                  value={employee.employeeName}
-                  disabled
-                />
-              </label>
-
-              <div className="grid">
-                <label className="field" style={{ minWidth: 0 }}>
+              <form onSubmit={submitLeave}>
+                <label className="field">
                   <span className="label">
-                    Current Off-Date *
+                    Leave Type *
                   </span>
-                  <div className="dateInputShell">
-                    <input
-                      className="dateNativeInput"
-                      type="date"                    style={{
-                      width: "100%",
-                      minWidth: 0,
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                      value={currentOffDate}                    onChange={(event) =>
-                      setCurrentOffDate(event.target.value)
+                  <select
+                    className="select"
+                    value={leaveType}
+                    onChange={(event) =>
+                      setLeaveType(event.target.value)
                     }
                     required
-                    />
-                  </div>
+                    disabled={leaveTypes.length === 0}
+                  >
+                    {leaveTypes.length === 0 ? (
+                      <option value="">
+                        No leave types available
+                      </option>
+                    ) : (
+                      leaveTypes.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </label>
 
-                <label className="field" style={{ minWidth: 0 }}>
+                <div className="grid">
+                  <label
+                    className="field"
+                    style={{ minWidth: 0 }}
+                  >
+                    <span className="label">
+                      Start Date *
+                    </span>
+                    <div className="dateInputShell">
+                      <input
+                        className="dateNativeInput"
+                        type="date"
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                        }}
+                        value={startDate}
+                        onChange={(event) =>
+                          setStartDate(
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </div>
+                  </label>
+
+                  <label
+                    className="field"
+                    style={{ minWidth: 0 }}
+                  >
+                    <span className="label">
+                      End Date *
+                    </span>
+                    <div className="dateInputShell">
+                      <input
+                        className="dateNativeInput"
+                        type="date"
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                        }}
+                        value={endDate}
+                        onChange={(event) =>
+                          setEndDate(event.target.value)
+                        }
+                        required
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                <label className="field">
                   <span className="label">
-                    Requested New Off-Date *
+                    Day Type *
                   </span>
-                  <div className="dateInputShell">
-                    <input
-                      className="dateNativeInput"
-                      type="date"                    style={{
-                      width: "100%",
-                      minWidth: 0,
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                    }}
-                    min={week.start}
-                    max={week.end}
-                      value={requestedNewOffDate}                    onChange={(event) =>
-                      setRequestedNewOffDate(
+                  <select
+                    className="select"
+                    value={dayType}
+                    onChange={(event) =>
+                      setDayType(
+                        event.target.value as
+                          | "Full Day"
+                          | "Partial Day",
+                      )
+                    }
+                  >
+                    <option>Full Day</option>
+                    <option>Partial Day</option>
+                  </select>
+                </label>
+
+                {dayType === "Partial Day" && (
+                  <div className="grid">
+                    <label className="field">
+                      <span className="label">
+                        Start Time *
+                      </span>
+                      <input
+                        className="input"
+                        type="time"
+                        value={startTime}
+                        onChange={(event) =>
+                          setStartTime(
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span className="label">
+                        End Time *
+                      </span>
+                      <input
+                        className="input"
+                        type="time"
+                        value={endTime}
+                        onChange={(event) =>
+                          setEndTime(
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <label className="field">
+                  <span className="label">
+                    Reason for Leave *
+                  </span>
+                  <textarea
+                    className="textarea"
+                    value={leaveReason}
+                    onChange={(event) =>
+                      setLeaveReason(
                         event.target.value,
                       )
                     }
+                    placeholder="Enter the reason for your leave request"
                     required
-                    />
-                  </div>
+                  />
+                </label>
+
+                <label className="field">
+                  <span className="label">
+                    Attachment
+                  </span>
+                  <input
+                    className="input"
+                    type="file"
+                    onChange={(event) =>
+                      setAttachment(
+                        event.target.files?.[0] ||
+                          null,
+                      )
+                    }
+                  />
                   <div
                     className="small"
                     style={{ marginTop: 5 }}
                   >
-                    For this week only: {week.start} to{" "}
-                    {week.end}
+                    Optional. Maximum 10 MB.
                   </div>
                 </label>
+
+                {contacts.length > 0 && (
+                  <div className="field">
+                    <span className="label">
+                      Notify
+                    </span>
+                    <div className="small">
+                      Optional. Selected people receive a
+                      direct Lark notification only.
+                    </div>
+
+                    <div className="checklist">
+                      {contacts.map((contact) => (
+                        <label
+                          className="check"
+                          key={contact.name}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={notify.includes(
+                              contact.name,
+                            )}
+                            onChange={(event) =>
+                              setNotify((previous) =>
+                                event.target.checked
+                                  ? [
+                                      ...previous,
+                                      contact.name,
+                                    ]
+                                  : previous.filter(
+                                      (item) =>
+                                        item !==
+                                        contact.name,
+                                    ),
+                              )
+                            }
+                          />
+                          <span>{contact.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="divider" />
+
+                <button
+                  className="btn btnPrimary"
+                  disabled={busy}
+                  style={{ width: "100%" }}
+                >
+                  {busy
+                    ? "Submitting…"
+                    : "Submit Leave Request"}
+                </button>
+              </form>
+
+              {status && (
+                <div
+                  className={`status ${
+                    statusKind === "error"
+                      ? "error"
+                      : statusKind === "success"
+                        ? "success"
+                        : ""
+                  }`}
+                >
+                  {status}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="card">
+              <div className="between">
+                <div>
+                  <h2 className="sectionTitle">
+                    Change Off-Date Request
+                  </h2>
+                  <p className="muted">
+                    Requested new off-date must be within this week.
+                  </p>
+                </div>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    setRequestType(null);
+                    setStatus("");
+                  }}
+                >
+                  Back
+                </button>
               </div>
 
-              <label className="field">
-                <span className="label">
-                  Reason for Change *
-                </span>
-                <textarea
-                  className="textarea"
-                  value={changeOffReason}
-                  onChange={(event) =>
-                    setChangeOffReason(event.target.value)
-                  }
-                  placeholder="Enter the reason for changing your off-date"
-                  required
-                />
-              </label>
-
-              <div className="divider" />
-
-              <button
-                className="btn btnPrimary"
-                disabled={busy}
-                style={{ width: "100%" }}
-              >
-                {busy
-                  ? "Submitting…"
-                  : "Submit Change Day-Off Request"}
-              </button>
-            </form>
-
-            {status && (
-              <div
-                className={`status ${
-                  statusKind === "error"
-                    ? "error"
-                    : statusKind === "success"
-                      ? "success"
-                      : ""
-                }`}
-              >
-                {status}
+              <div className="employeeBox">
+                <strong>{employee.employeeName}</strong>
+                <div className="small">
+                  {employee.employeeId} •{" "}
+                  {employee.department || "Employee"}
+                </div>
+                <div
+                  className="small"
+                  style={{ marginTop: 10 }}
+                >
+                  Approval Group:{" "}
+                  <strong>
+                    {employee.leaveApprovalGroup}
+                  </strong>
+                </div>
               </div>
-            )}
-          </div>
-        )}
-      </div>
+
+              <form onSubmit={submitChangeOff}>
+                <label className="field">
+                  <span className="label">
+                    Employee Name
+                  </span>
+                  <input
+                    className="input"
+                    value={employee.employeeName}
+                    disabled
+                  />
+                </label>
+
+                <div className="grid">
+                  <label
+                    className="field"
+                    style={{ minWidth: 0 }}
+                  >
+                    <span className="label">
+                      Current Off-Date *
+                    </span>
+                    <div className="dateInputShell">
+                      <input
+                        className="dateNativeInput"
+                        type="date"
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                        }}
+                        value={currentOffDate}
+                        onChange={(event) =>
+                          setCurrentOffDate(
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </div>
+                  </label>
+
+                  <label
+                    className="field"
+                    style={{ minWidth: 0 }}
+                  >
+                    <span className="label">
+                      Requested New Off-Date *
+                    </span>
+                    <div className="dateInputShell">
+                      <input
+                        className="dateNativeInput"
+                        type="date"
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          boxSizing: "border-box",
+                        }}
+                        min={week.start}
+                        max={week.end}
+                        value={requestedNewOffDate}
+                        onChange={(event) =>
+                          setRequestedNewOffDate(
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </div>
+                    <div
+                      className="small"
+                      style={{ marginTop: 5 }}
+                    >
+                      For this week only:{" "}
+                      {week.start} to {week.end}
+                    </div>
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span className="label">
+                    Reason for Change *
+                  </span>
+                  <textarea
+                    className="textarea"
+                    value={changeOffReason}
+                    onChange={(event) =>
+                      setChangeOffReason(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="Enter the reason for changing your off-date"
+                    required
+                  />
+                </label>
+
+                <div className="divider" />
+
+                <button
+                  className="btn btnPrimary"
+                  disabled={busy}
+                  style={{ width: "100%" }}
+                >
+                  {busy
+                    ? "Submitting…"
+                    : "Submit Change Day-Off Request"}
+                </button>
+              </form>
+
+              {status && (
+                <div
+                  className={`status ${
+                    statusKind === "error"
+                      ? "error"
+                      : statusKind === "success"
+                        ? "success"
+                        : ""
+                  }`}
+                >
+                  {status}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </main>
     </>
   );
