@@ -75,8 +75,14 @@ function filedText(value: number) {
   }).format(new Date(value));
 }
 
-function attachmentUrl(fileToken: string) {
-  return `/api/attachment/${encodeURIComponent(fileToken)}`;
+function attachmentUrl(
+  fileToken: string,
+  fileName = "attachment",
+) {
+  return (
+    `/api/attachment/${encodeURIComponent(fileToken)}` +
+    `?name=${encodeURIComponent(fileName)}`
+  );
 }
 
 function likelyImage(item: Attachment) {
