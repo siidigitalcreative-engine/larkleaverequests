@@ -76,11 +76,14 @@ function dateFiledText(value: number) {
 
 function attachmentUrl(
   fileToken: string,
-  fileName = "attachment",
+  fileName: string,
+  recordId: string,
 ) {
   return (
     `/api/attachment/${encodeURIComponent(fileToken)}` +
-    `?name=${encodeURIComponent(fileName)}`
+    `?source=leave` +
+    `&recordId=${encodeURIComponent(recordId)}` +
+    `&name=${encodeURIComponent(fileName || "attachment")}`
   );
 }
 
@@ -321,10 +324,7 @@ export default function ReviewPage() {
                         >
                           {likelyImage(item) && (
                             <a
-                              href={attachmentUrl(
-                                item.fileToken,
-                                item.name,
-                              )}
+                              href={attachmentUrl(item.fileToken, item.name, params.recordId)}
                               target="_blank"
                               rel="noreferrer"
                               style={{
@@ -332,10 +332,7 @@ export default function ReviewPage() {
                               }}
                             >
                               <img
-                                src={attachmentUrl(
-                                  item.fileToken,
-                                  item.name,
-                                )}
+                                src={attachmentUrl(item.fileToken, item.name, params.recordId)}
                                 alt={item.name}
                                 style={{
                                   display: "block",
@@ -373,10 +370,7 @@ export default function ReviewPage() {
                             </div>
 
                             <a
-                              href={attachmentUrl(
-                                item.fileToken,
-                                item.name,
-                              )}
+                              href={attachmentUrl(item.fileToken, item.name, params.recordId)}
                               target="_blank"
                               rel="noreferrer"
                               className="btn btnGhost"
