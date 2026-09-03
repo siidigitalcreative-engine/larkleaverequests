@@ -402,45 +402,100 @@ async function updateRecord(
   }
 }
 
-export async function createOvertimeRequest(input: OvertimeInput) {
+export async function createOvertimeRequest(
+  input: OvertimeInput,
+) {
   const tableId = overtimeTableId();
   const fieldsInfo = await listFields(tableId);
-  const requestId = `${input.employeeId}-OT-${input.submittedAt}`;
+
+  const requestId =
+    `${input.employeeId}-OT-${input.submittedAt}`;
+
   const times = overtimeDateTimes(
     input.overtimeDate,
     input.startTime,
     input.endTime,
   );
 
-  const { fields } = writableFields(fieldsInfo, {
-    "Overtime Request ID": requestId,
-    "Request ID": requestId,
-    "Employee ID": input.employeeId,
-    "Employee Name": input.employeeName,
-    Department: input.department || "",
-    "Approval Group": input.approvalGroup,
-    "Overtime Date": toDateMs(input.overtimeDate),
-    "Start Time": times.startMs,
-    "End Time": times.endMs,
-    // If Duration (Hours) is a Formula field, this is automatically skipped.
-    // If it is a Number field, the calculated value is written.
-    "Duration (Hours)": times.durationHours,
-    "Public Holiday?": input.publicHoliday,
-    "Compensation Method": input.compensationMethod,
-    Reason: input.reason,
-    Status: "Pending",
-    "Submitted At": input.submittedAt,
-    Attachment: input.attachmentToken
-      ? [{ file_token: input.attachmentToken }]
-      : undefined,
-  });
+  // If an employee selected an attachment, do not silently
+  // drop it. Require the master Overtime table to have the field.
+  if (input.attachmentToken) {
+    const hasAttachmentField =
+      fieldsInfo.some(
+        (field: any) =>
+          text(field?.field_name) ===
+          "Attachment",
+      );
 
-  const recordId = await createRecord(tableId, fields);
+    if (!hasAttachmentField) {
+      throw new Error(
+        'Overtime Records is missing the "Attachment" field. Add an Attachment-type field named exactly "Attachment".',
+      );
+    }
+  }
+
+  const { fields } = writableFields(
+    fieldsInfo,
+    {
+      "Overtime Request ID":
+        requestId,
+      "Request ID": requestId,
+      "Employee ID":
+        input.employeeId,
+      "Employee Name":
+        input.employeeName,
+      Department:
+        input.department || "",
+      "Approval Group":
+        input.approvalGroup,
+      "Overtime Date":
+        toDateMs(
+          input.overtimeDate,
+        ),
+      "Start Time":
+        times.startMs,
+      "End Time": times.endMs,
+      "Duration (Hours)":
+        times.durationHours,
+      "Public Holiday?":
+        input.publicHoliday,
+      "Compensation Method":
+        input.compensationMethod,
+      Reason: input.reason,
+      Status: "Pending",
+      "Submitted At":
+        input.submittedAt,
+    },
+  );
+
+  const recordId =
+    await createRecord(
+      tableId,
+      fields,
+    );
+
+  // Save attachment in a dedicated update after record creation.
+  // This avoids the attachment being silently omitted during create.
+  if (input.attachmentToken) {
+    await updateRecord(
+      tableId,
+      recordId,
+      {
+        Attachment: [
+          {
+            file_token:
+              input.attachmentToken,
+          },
+        ],
+      },
+    );
+  }
 
   return {
     recordId,
     requestId,
-    durationHours: times.durationHours,
+    durationHours:
+      times.durationHours,
     startMs: times.startMs,
     endMs: times.endMs,
   };
@@ -452,55 +507,84 @@ export async function createOvertimeApprovalGroupRecord(
     requestId: string;
   },
 ) {
-  const destination = await approvalDestinationFor(
-    input.approvalGroup,
-  );
+  const destination =
+    await approvalDestinationFor(
+      input.approvalGroup,
+    );
 
   if (!destination) {
     return {
       created: false as const,
-      reason: `No approval table found for group: ${input.approvalGroup}.`,
+      reason:
+        `No approval table found for group: ${input.approvalGroup}.`,
     };
   }
 
-  const fieldsInfo = await listFields(
-    destination.tableId,
-    destination.appToken,
-  );
-  const times = overtimeDateTimes(
-    input.overtimeDate,
-    input.startTime,
-    input.endTime,
-  );
+  const fieldsInfo =
+    await listFields(
+      destination.tableId,
+      destination.appToken,
+    );
 
-  const { fields, skippedFields } = writableFields(
-    fieldsInfo,
-    {
-      "Approval Type": "Overtime",
-      "Request ID": input.requestId,
-      "Request Title": `${input.employeeName} — Overtime`,
-      "Request Details": input.reason,
-      "Employee ID": input.employeeId,
-      "Employee Name": input.employeeName,
-      Department: input.department || "",
-      "Approval Group": input.approvalGroup,
-      "Overtime Date": toDateMs(input.overtimeDate),
-      "Start Time": times.startMs,
-      "End Time": times.endMs,
-      "Duration (Hours)": times.durationHours,
-      "Public Holiday?": input.publicHoliday,
-      "Compensation Method": input.compensationMethod,
-      Reason: input.reason,
-      Decision: "Pending",
-      Status: "Pending",
-      "Submitted At": input.submittedAt,
-      Attachment: input.attachmentToken
-        ? [{ file_token: input.attachmentToken }]
-        : undefined,
-      "Main Record ID": input.mainRecordId,
-      "Sync Status": "Pending",
-    },
-  );
+  const times =
+    overtimeDateTimes(
+      input.overtimeDate,
+      input.startTime,
+      input.endTime,
+    );
+
+  const hasAttachmentField =
+    fieldsInfo.some(
+      (field: any) =>
+        text(field?.field_name) ===
+        "Attachment",
+    );
+
+  const { fields, skippedFields } =
+    writableFields(
+      fieldsInfo,
+      {
+        "Approval Type":
+          "Overtime",
+        "Request ID":
+          input.requestId,
+        "Request Title":
+          `${input.employeeName} — Overtime`,
+        "Request Details":
+          input.reason,
+        "Employee ID":
+          input.employeeId,
+        "Employee Name":
+          input.employeeName,
+        Department:
+          input.department || "",
+        "Approval Group":
+          input.approvalGroup,
+        "Overtime Date":
+          toDateMs(
+            input.overtimeDate,
+          ),
+        "Start Time":
+          times.startMs,
+        "End Time":
+          times.endMs,
+        "Duration (Hours)":
+          times.durationHours,
+        "Public Holiday?":
+          input.publicHoliday,
+        "Compensation Method":
+          input.compensationMethod,
+        Reason: input.reason,
+        Decision: "Pending",
+        Status: "Pending",
+        "Submitted At":
+          input.submittedAt,
+        "Main Record ID":
+          input.mainRecordId,
+        "Sync Status":
+          "Pending",
+      },
+    );
 
   if (!fields["Request ID"]) {
     throw new Error(
@@ -508,15 +592,39 @@ export async function createOvertimeApprovalGroupRecord(
     );
   }
 
-  const recordId = await createRecord(
-    destination.tableId,
-    fields,
-    destination.appToken,
-  );
+  const recordId =
+    await createRecord(
+      destination.tableId,
+      fields,
+      destination.appToken,
+    );
+
+  if (input.attachmentToken) {
+    if (!hasAttachmentField) {
+      skippedFields.push(
+        'Attachment: field does not exist in destination approval table',
+      );
+    } else {
+      await updateRecord(
+        destination.tableId,
+        recordId,
+        {
+          Attachment: [
+            {
+              file_token:
+                input.attachmentToken,
+            },
+          ],
+        },
+        destination.appToken,
+      );
+    }
+  }
 
   return {
     created: true as const,
-    tableId: destination.tableId,
+    tableId:
+      destination.tableId,
     recordId,
     skippedFields,
   };
