@@ -26,48 +26,6 @@ const schema = z.object({
   reason: z.string().min(3).max(2000),
 });
 
-function manilaTodayParts() {
-  const now = new Date(
-    Date.now() + 8 * 60 * 60 * 1000,
-  );
-
-  return {
-    year: now.getUTCFullYear(),
-    month: now.getUTCMonth(),
-    day: now.getUTCDate(),
-    weekday: now.getUTCDay(),
-  };
-}
-
-function ymd(date: Date) {
-  return `${date.getUTCFullYear()}-${String(
-    date.getUTCMonth() + 1,
-  ).padStart(2, "0")}-${String(
-    date.getUTCDate(),
-  ).padStart(2, "0")}`;
-}
-
-function currentManilaWeek() {
-  const p = manilaTodayParts();
-  const today = new Date(
-    Date.UTC(p.year, p.month, p.day),
-  );
-  const daysSinceMonday = (p.weekday + 6) % 7;
-
-  const monday = new Date(today);
-  monday.setUTCDate(
-    today.getUTCDate() - daysSinceMonday,
-  );
-
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-
-  return {
-    start: ymd(monday),
-    end: ymd(sunday),
-  };
-}
-
 export async function POST(request: Request) {
   try {
     const session = verifySessionToken(
@@ -95,22 +53,6 @@ export async function POST(request: Request) {
       ),
       reason: String(form.get("reason") ?? ""),
     });
-
-    const week = currentManilaWeek();
-
-    if (
-      body.requestedNewOffDate < week.start ||
-      body.requestedNewOffDate > week.end
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            `Requested New Off-Date must be within this week ` +
-            `(${week.start} to ${week.end}).`,
-        },
-        { status: 400 },
-      );
-    }
 
     if (
       body.currentOffDate ===
