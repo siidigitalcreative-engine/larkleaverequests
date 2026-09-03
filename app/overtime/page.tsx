@@ -47,6 +47,7 @@ export default function OvertimePage() {
       | "Apply for overtimes payment"
     >("Apply for days off");
   const [reason, setReason] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -82,19 +83,22 @@ export default function OvertimePage() {
     setStatus("");
 
     try {
+      const form = new FormData();
+
+      form.set("overtimeDate", overtimeDate);
+      form.set("startTime", startTime);
+      form.set("endTime", endTime);
+      form.set("publicHoliday", publicHoliday);
+      form.set("compensationMethod", compensationMethod);
+      form.set("reason", reason);
+
+      if (attachment) {
+        form.set("attachment", attachment);
+      }
+
       const response = await fetch("/api/overtime", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          overtimeDate,
-          startTime,
-          endTime,
-          publicHoliday,
-          compensationMethod,
-          reason,
-        }),
+        body: form,
       });
 
       const data = await response.json();
@@ -232,6 +236,7 @@ export default function OvertimePage() {
                     "Apply for days off",
                   );
                   setReason("");
+                  setAttachment(null);
                   setStatus("");
                 }}
               >
@@ -474,6 +479,27 @@ export default function OvertimePage() {
                   placeholder="Enter the reason for your Overtime request"
                   required
                 />
+              </label>
+
+
+              <label className="field">
+                <span className="label">Attachment</span>
+                <input
+                  className="input"
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(event) =>
+                    setAttachment(
+                      event.target.files?.[0] || null,
+                    )
+                  }
+                />
+                <div
+                  className="small"
+                  style={{ marginTop: 5 }}
+                >
+                  Optional. Image or PDF, maximum 10 MB.
+                </div>
               </label>
 
               <div className="divider" />
