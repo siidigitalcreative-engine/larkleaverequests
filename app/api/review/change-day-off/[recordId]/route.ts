@@ -5,6 +5,7 @@ import {
   updateApprovalGroupDecision,
   updateChangeOffDecision,
 } from "@/lib/lark";
+import { extractApprovalAttachments } from "@/lib/approval-attachments";
 import { verifyReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -13,9 +14,22 @@ function text(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function numberValue(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0
+    ? n
+    : 0;
+}
+
 function dateText(value: unknown) {
   const timestamp = Number(value);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+
+  if (
+    !Number.isFinite(timestamp) ||
+    timestamp <= 0
+  ) {
+    return "";
+  }
 
   return new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
@@ -27,37 +41,78 @@ function dateText(value: unknown) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { recordId: string } },
+  {
+    params,
+  }: {
+    params: { recordId: string };
+  },
 ) {
   try {
     const url = new URL(request.url);
-    const token = url.searchParams.get("token") || "";
+    const token =
+      url.searchParams.get("token") || "";
 
-    if (!verifyReviewToken(`change-off:${params.recordId}`, token)) {
+    if (
+      !verifyReviewToken(
+        `change-off:${params.recordId}`,
+        token,
+      )
+    ) {
       return NextResponse.json(
-        { error: "Invalid or expired review link." },
+        {
+          error:
+            "Invalid or expired review link.",
+        },
         { status: 403 },
       );
     }
 
-    const record = await getChangeOffRecord(params.recordId);
+    const record =
+      await getChangeOffRecord(
+        params.recordId,
+      );
+
     const f = record?.fields ?? {};
 
     return NextResponse.json({
       request: {
         recordId: params.recordId,
         requestId:
-          text(f["Change Off Request ID"]) || text(f["Request ID"]),
-        employeeName: text(f["Employee Name"]),
+          text(
+            f["Change Off Request ID"],
+          ) || text(f["Request ID"]),
+        employeeName: text(
+          f["Employee Name"],
+        ),
         employeeId: text(f["Employee ID"]),
         department: text(f["Department"]),
-        approvalGroup: text(f["Approval Group"]),
-        currentOffDate: f["Current Off-Date"],
-        requestedNewOffDate: f["Requested New Off-Date"],
+        approvalGroup: text(
+          f["Approval Group"],
+        ),
+        currentOffDate: numberValue(
+          f["Current Off-Date"],
+        ),
+        requestedNewOffDate: numberValue(
+          f["Requested New Off-Date"],
+        ),
         reason:
-          text(f["Reason for Change"]) || text(f["Reason"]),
-        status: text(f["Status"]),
-        rejectionReason: text(f["Rejection Reason"]),
+          text(f["Reason for Change"]) ||
+          text(f["Reason"]),
+        submittedAt: numberValue(
+          f["Submitted At"],
+        ),
+        attachments:
+          extractApprovalAttachments(
+            f["Attachment"],
+          ),
+        status:
+          text(f["Status"]) || "Pending",
+        rejectionReason: text(
+          f["Rejection Reason"],
+        ),
+        approvalComment: text(
+          f["Approval Comment"],
+        ),
       },
     });
   } catch (error) {
@@ -75,15 +130,30 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { recordId: string } },
+  {
+    params,
+  }: {
+    params: { recordId: string };
+  },
 ) {
   try {
     const body = await request.json();
-    const token = typeof body.token === "string" ? body.token : "";
+    const token =
+      typeof body.token === "string"
+        ? body.token
+        : "";
 
-    if (!verifyReviewToken(`change-off:${params.recordId}`, token)) {
+    if (
+      !verifyReviewToken(
+        `change-off:${params.recordId}`,
+        token,
+      )
+    ) {
       return NextResponse.json(
-        { error: "Invalid or expired review link." },
+        {
+          error:
+            "Invalid or expired review link.",
+        },
         { status: 403 },
       );
     }
@@ -102,23 +172,44 @@ export async function POST(
       );
     }
 
-    const record = await getChangeOffRecord(params.recordId);
-    const f = record?.fields ?? {};
-    const currentStatus = text(f["Status"]);
+    const record =
+      await getChangeOffRecord(
+        params.recordId,
+      );
 
-    if (currentStatus && currentStatus !== "Pending") {
+    const f = record?.fields ?? {};
+    const currentStatus = text(
+      f["Status"],
+    );
+
+    if (
+      currentStatus &&
+      currentStatus !== "Pending"
+    ) {
       return NextResponse.json(
-        { error: `This request is already ${currentStatus}.` },
+        {
+          error: `This request is already ${currentStatus}.`,
+        },
         { status: 409 },
       );
     }
 
-    const rejectionReason = text(body.rejectionReason);
-    const approvalComment = text(body.approvalComment);
+    const rejectionReason = text(
+      body.rejectionReason,
+    );
+    const approvalComment = text(
+      body.approvalComment,
+    );
 
-    if (decision === "Rejected" && rejectionReason.length < 2) {
+    if (
+      decision === "Rejected" &&
+      rejectionReason.length < 2
+    ) {
       return NextResponse.json(
-        { error: "Please enter a rejection reason." },
+        {
+          error:
+            "Please enter a rejection reason.",
+        },
         { status: 400 },
       );
     }
@@ -134,10 +225,14 @@ export async function POST(
 
     try {
       await updateApprovalGroupDecision({
-        approvalGroup: text(f["Approval Group"]),
+        approvalGroup: text(
+          f["Approval Group"],
+        ),
         mainRecordId: params.recordId,
         requestId:
-          text(f["Change Off Request ID"]) || text(f["Request ID"]),
+          text(
+            f["Change Off Request ID"],
+          ) || text(f["Request ID"]),
         decision,
         rejectionReason,
         approvalComment,
@@ -152,12 +247,22 @@ export async function POST(
 
     try {
       await sendChangeOffDecisionCard({
-        approvalGroup: text(f["Approval Group"]),
-        employeeName: text(f["Employee Name"]),
+        approvalGroup: text(
+          f["Approval Group"],
+        ),
+        employeeName: text(
+          f["Employee Name"],
+        ),
         requestId:
-          text(f["Change Off Request ID"]) || text(f["Request ID"]),
-        currentOffDate: dateText(f["Current Off-Date"]),
-        requestedNewOffDate: dateText(f["Requested New Off-Date"]),
+          text(
+            f["Change Off Request ID"],
+          ) || text(f["Request ID"]),
+        currentOffDate: dateText(
+          f["Current Off-Date"],
+        ),
+        requestedNewOffDate: dateText(
+          f["Requested New Off-Date"],
+        ),
         decision,
         rejectionReason,
         approvalComment,
