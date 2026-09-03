@@ -10,6 +10,13 @@ import {
   useSearchParams,
 } from "next/navigation";
 
+type Attachment = {
+  fileToken: string;
+  name: string;
+  type?: string;
+  size?: number;
+};
+
 type OvertimeRequest = {
   recordId: string;
   requestId: string;
@@ -24,6 +31,8 @@ type OvertimeRequest = {
   publicHoliday: string;
   compensationMethod: string;
   reason: string;
+  submittedAt: number;
+  attachments: Attachment[];
   status: string;
   rejectionReason: string;
   approvalComment: string;
@@ -49,6 +58,30 @@ function timeText(value: number) {
     minute: "2-digit",
     hour12: true,
   }).format(new Date(value));
+}
+
+
+function filedText(value: number) {
+  if (!value) return "—";
+
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(value));
+}
+
+function attachmentUrl(fileToken: string) {
+  return `/api/attachment/${encodeURIComponent(fileToken)}`;
+}
+
+function likelyImage(item: Attachment) {
+  if (item.type?.toLowerCase().startsWith("image/")) return true;
+  return /\.(png|jpe?g|webp|gif|bmp)$/i.test(item.name || "");
 }
 
 export default function OvertimeReviewPage() {
@@ -195,6 +228,11 @@ export default function OvertimeReviewPage() {
                 </div>
 
                 <div className="fact">
+                  <strong>Date Filed</strong>
+                  <div>{filedText(requestData.submittedAt)}</div>
+                </div>
+
+                <div className="fact">
                   <strong>Start Time</strong>
                   <div>
                     {timeText(requestData.startTime)}
@@ -255,6 +293,68 @@ export default function OvertimeReviewPage() {
                   </div>
                 </div>
               </div>
+
+
+              {requestData.attachments?.length > 0 && (
+                <div className="field">
+                  <span className="label">Attachment</span>
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {requestData.attachments.map((item) => (
+                      <div
+                        key={item.fileToken}
+                        className="fact"
+                        style={{ overflow: "hidden" }}
+                      >
+                        {likelyImage(item) && (
+                          <a
+                            href={attachmentUrl(item.fileToken)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <img
+                              src={attachmentUrl(item.fileToken)}
+                              alt={item.name}
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                maxHeight: 520,
+                                objectFit: "contain",
+                                borderRadius: 10,
+                                background: "#f8fafc",
+                              }}
+                            />
+                          </a>
+                        )}
+                        <div
+                          className="between"
+                          style={{
+                            marginTop: likelyImage(item) ? 10 : 0,
+                          }}
+                        >
+                          <div
+                            className="small"
+                            style={{
+                              fontWeight: 700,
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {item.name || "Attachment"}
+                          </div>
+                          <a
+                            href={attachmentUrl(item.fileToken)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btnGhost"
+                            style={{ textDecoration: "none" }}
+                          >
+                            View
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {requestData.status !== "Pending" || done ? (
                 <div
