@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   getLeaveRecord,
-  sendDecisionCard,
   updateApprovalGroupDecision,
   updateLeaveDecision,
 } from "@/lib/lark";
 import { extractApprovalAttachments } from "@/lib/approval-attachments";
+import { sendLeaveDecisionCardEnhanced } from "@/lib/decision-notifications";
 import { verifyReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -16,11 +16,7 @@ function text(value: unknown) {
 
 function dateText(value: unknown) {
   const timestamp = Number(value);
-
-  if (!Number.isFinite(timestamp) || timestamp <= 0) {
-    return "";
-  }
-
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
   return new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
     year: "numeric",
@@ -34,19 +30,12 @@ function numberValue(value: unknown) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: { recordId: string } },
-) {
+export async function GET(request: Request, { params }: { params: { recordId: string } }) {
   try {
     const url = new URL(request.url);
     const token = url.searchParams.get("token") || "";
-
     if (!verifyReviewToken(params.recordId, token)) {
-      return NextResponse.json(
-        { error: "Invalid or expired review link." },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "Invalid or expired review link." }, { status: 403 });
     }
 
     const record = await getLeaveRecord(params.recordId);
@@ -64,7 +53,6 @@ export async function GET(
         startDate: numberValue(f["Start Date"]),
         endDate: numberValue(f["End Date"]),
         dayType: text(f["Day Type"]),
-        // Keep these numeric. The UI formats them as Manila time.
         startTime: numberValue(f["Start Time"]),
         endTime: numberValue(f["End Time"]),
         reason: text(f["Reason"]),
@@ -73,78 +61,36 @@ export async function GET(
         approvedBy: text(f["Approved By"]),
         rejectionReason: text(f["Rejection Reason"]),
         approvalComment: text(f["Approval Comment"]),
-        attachments: extractApprovalAttachments(
-          f["Attachment"],
-        ),
+        attachments: extractApprovalAttachments(f["Attachment"]),
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load request.",
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load request." }, { status: 500 });
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: { recordId: string } },
-) {
+export async function POST(request: Request, { params }: { params: { recordId: string } }) {
   try {
     const body = await request.json();
-    const token =
-      typeof body.token === "string" ? body.token : "";
-
+    const token = typeof body.token === "string" ? body.token : "";
     if (!verifyReviewToken(params.recordId, token)) {
-      return NextResponse.json(
-        { error: "Invalid or expired review link." },
-        { status: 403 },
-      );
+      return NextResponse.json({ error: "Invalid or expired review link." }, { status: 403 });
     }
 
-    const decision =
-      body.decision === "approve"
-        ? "Approved"
-        : body.decision === "reject"
-          ? "Rejected"
-          : null;
-
-    if (!decision) {
-      return NextResponse.json(
-        { error: "Invalid decision." },
-        { status: 400 },
-      );
-    }
+    const decision = body.decision === "approve" ? "Approved" : body.decision === "reject" ? "Rejected" : null;
+    if (!decision) return NextResponse.json({ error: "Invalid decision." }, { status: 400 });
 
     const record = await getLeaveRecord(params.recordId);
     const f = record?.fields ?? {};
     const currentStatus = text(f["Status"]);
-
     if (currentStatus && currentStatus !== "Pending") {
-      return NextResponse.json(
-        {
-          error: `This request is already ${currentStatus}.`,
-        },
-        { status: 409 },
-      );
+      return NextResponse.json({ error: `This request is already ${currentStatus}.` }, { status: 409 });
     }
 
     const rejectionReason = text(body.rejectionReason);
     const approvalComment = text(body.approvalComment);
-
-    if (
-      decision === "Rejected" &&
-      rejectionReason.length < 2
-    ) {
-      return NextResponse.json(
-        { error: "Please enter a rejection reason." },
-        { status: 400 },
-      );
+    if (decision === "Rejected" && rejectionReason.length < 2) {
+      return NextResponse.json({ error: "Please enter a rejection reason." }, { status: 400 });
     }
 
     await updateLeaveDecision({
@@ -156,7 +102,6 @@ export async function POST(
     });
 
     const warnings: string[] = [];
-
     try {
       await updateApprovalGroupDecision({
         approvalGroup: text(f["Approval Group"]),
@@ -167,54 +112,28 @@ export async function POST(
         approvalComment,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to sync approval-group table.";
-
-      warnings.push(message);
-      console.error(
-        "Approval-group table sync failed:",
-        error,
-      );
+      warnings.push(error instanceof Error ? error.message : "Unable to sync approval-group table.");
     }
 
     try {
-      await sendDecisionCard({
+      await sendLeaveDecisionCardEnhanced({
         approvalGroup: text(f["Approval Group"]),
         employeeName: text(f["Employee Name"]),
         requestId: text(f["Leave Request ID"]),
         leaveType: text(f["Leave Type"]),
         startDate: dateText(f["Start Date"]),
         endDate: dateText(f["End Date"]),
+        submittedAt: numberValue(f["Submitted At"]),
         decision,
         rejectionReason,
         approvalComment,
       });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to send final decision card.";
-
-      warnings.push(message);
-      console.error("Final decision card failed:", error);
+      warnings.push(error instanceof Error ? error.message : "Unable to send final decision card.");
     }
 
-    return NextResponse.json({
-      ok: true,
-      decision,
-      warnings,
-    });
+    return NextResponse.json({ ok: true, decision, warnings });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to process decision.",
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to process decision." }, { status: 500 });
   }
 }
