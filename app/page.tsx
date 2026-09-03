@@ -136,8 +136,6 @@ export default function Home() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
 
-  const week = useMemo(() => currentWeekBounds(), []);
-
   useEffect(() => {
     Promise.all([
       fetch("/api/auth/session", { cache: "no-store" }).then((r) =>
@@ -381,15 +379,6 @@ export default function Home() {
     setStatus("");
 
     try {
-      if (
-        requestedNewOffDate < week.start ||
-        requestedNewOffDate > week.end
-      ) {
-        throw new Error(
-          `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
-        );
-      }
-
       const form = new FormData();
 
       form.set("currentOffDate", currentOffDate);
@@ -1534,8 +1523,7 @@ export default function Home() {
                       className="small"
                       style={{ marginTop: 5 }}
                     >
-                      For this week only:{" "}
-                      {week.start} to {week.end}
+                      Select the new requested off-date.
                     </div>
                   </label>
                 </div>
