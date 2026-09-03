@@ -5,6 +5,7 @@ import {
   updateOvertimeApprovalGroupDecision,
   updateOvertimeDecision,
 } from "@/lib/overtime";
+import { extractApprovalAttachments } from "@/lib/approval-attachments";
 import { verifyReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -62,6 +63,8 @@ export async function GET(
         publicHoliday: text(f["Public Holiday?"]),
         compensationMethod: text(f["Compensation Method"]),
         reason: text(f["Reason"]),
+        submittedAt: Number(f["Submitted At"] ?? 0) || 0,
+        attachments: extractApprovalAttachments(f["Attachment"]),
         status: text(f["Status"]) || "Pending",
         rejectionReason: text(f["Rejection Reason"]),
         approvalComment: text(f["Approval Comment"]),
