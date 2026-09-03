@@ -1,12 +1,16 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listActiveEmployees } from "@/lib/lark";
+import {
+  listActiveEmployees,
+  uploadLeaveAttachment,
+} from "@/lib/lark";
 import {
   createOvertimeApprovalGroupRecord,
   createOvertimeRequest,
   sendOvertimeApprovalCard,
 } from "@/lib/overtime";
+import { uploadApprovalCardImage } from "@/lib/approval-attachments";
 import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
@@ -40,13 +44,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = schema.parse(await request.json());
+    const form = await request.formData();
 
-    // Always read the latest employee record before routing.
-    // This prevents a long-lived signed-in session from using an old Approval Group.
+    const body = schema.parse({
+      overtimeDate: String(
+        form.get("overtimeDate") ?? "",
+      ),
+      startTime: String(form.get("startTime") ?? ""),
+      endTime: String(form.get("endTime") ?? ""),
+      publicHoliday: String(
+        form.get("publicHoliday") ?? "",
+      ),
+      compensationMethod: String(
+        form.get("compensationMethod") ?? "",
+      ),
+      reason: String(form.get("reason") ?? ""),
+    });
+
     const employees = await listActiveEmployees();
+
     const currentEmployee = employees.find(
-      (employee) => employee.employeeId === session.employeeId,
+      (employee) =>
+        employee.employeeId === session.employeeId,
     );
 
     if (!currentEmployee) {
@@ -59,13 +78,54 @@ export async function POST(request: Request) {
       );
     }
 
+    let attachmentToken: string | undefined;
+    let attachmentImageKey: string | undefined;
+    let attachmentName: string | undefined;
+
+    const attachment = form.get("attachment");
+
+    if (attachment instanceof File && attachment.size > 0) {
+      if (attachment.size > 10 * 1024 * 1024) {
+        return NextResponse.json(
+          {
+            error:
+              "Overtime attachment must be 10 MB or smaller.",
+          },
+          { status: 400 },
+        );
+      }
+
+      attachmentName =
+        attachment.name || "Overtime attachment";
+
+      attachmentToken =
+        await uploadLeaveAttachment(attachment);
+
+      if (
+        attachment.type
+          .toLowerCase()
+          .startsWith("image/")
+      ) {
+        try {
+          attachmentImageKey =
+            await uploadApprovalCardImage(attachment);
+        } catch (error) {
+          console.error(
+            "Overtime card image upload failed:",
+            error,
+          );
+        }
+      }
+    }
+
     const submittedAt = Date.now();
 
     const input = {
       employeeId: currentEmployee.employeeId,
       employeeName: currentEmployee.employeeName,
       department: currentEmployee.department,
-      approvalGroup: currentEmployee.leaveApprovalGroup,
+      approvalGroup:
+        currentEmployee.leaveApprovalGroup,
       overtimeDate: body.overtimeDate,
       startTime: body.startTime,
       endTime: body.endTime,
@@ -73,9 +133,13 @@ export async function POST(request: Request) {
       compensationMethod: body.compensationMethod,
       reason: body.reason,
       submittedAt,
+      attachmentToken,
+      attachmentImageKey,
+      attachmentName,
     } as const;
 
     const created = await createOvertimeRequest(input);
+
     const reviewToken = makeReviewToken(
       `overtime:${created.recordId}`,
     );
