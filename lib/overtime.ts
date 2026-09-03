@@ -14,6 +14,9 @@ export type OvertimeInput = {
     | "Apply for overtimes payment";
   reason: string;
   submittedAt: number;
+  attachmentToken?: string;
+  attachmentImageKey?: string;
+  attachmentName?: string;
 };
 
 type ApprovalDestination = {
@@ -427,6 +430,9 @@ export async function createOvertimeRequest(input: OvertimeInput) {
     Reason: input.reason,
     Status: "Pending",
     "Submitted At": input.submittedAt,
+    Attachment: input.attachmentToken
+      ? [{ file_token: input.attachmentToken }]
+      : undefined,
   });
 
   const recordId = await createRecord(tableId, fields);
@@ -488,6 +494,9 @@ export async function createOvertimeApprovalGroupRecord(
       Decision: "Pending",
       Status: "Pending",
       "Submitted At": input.submittedAt,
+      Attachment: input.attachmentToken
+        ? [{ file_token: input.attachmentToken }]
+        : undefined,
       "Main Record ID": input.mainRecordId,
       "Sync Status": "Pending",
     },
@@ -632,7 +641,16 @@ export async function sendOvertimeApprovalCard(
             `**${input.employeeName}'s Overtime**\n` +
             `Employee ID: ${input.employeeId}\n` +
             `Department: ${input.department || "—"}\n` +
-            `Approval Group: ${input.approvalGroup}`,
+            `Approval Group: ${input.approvalGroup}\n` +
+            `**Date Filed: ${new Intl.DateTimeFormat("en-PH", {
+              timeZone: "Asia/Manila",
+              month: "short",
+              day: "2-digit",
+              year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+              hour12: true,
+            }).format(new Date(input.submittedAt))}**`,
         },
       },
       {
@@ -686,6 +704,29 @@ export async function sendOvertimeApprovalCard(
           content: `**Reason**\n${input.reason}`,
         },
       },
+      ...(input.attachmentImageKey
+        ? [
+            {
+              tag: "div",
+              text: {
+                tag: "lark_md",
+                content: `**Attachment${input.attachmentName ? ` — ${input.attachmentName}` : ""}**`,
+              },
+            },
+            {
+              tag: "img",
+              img_key: input.attachmentImageKey,
+              alt: {
+                tag: "plain_text",
+                content:
+                  input.attachmentName ||
+                  "Overtime attachment",
+              },
+              mode: "fit_horizontal",
+              preview: true,
+            },
+          ]
+        : []),
       {
         tag: "action",
         actions: [
