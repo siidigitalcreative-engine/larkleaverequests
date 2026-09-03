@@ -307,12 +307,12 @@ export default function OvertimeReviewPage() {
                       >
                         {likelyImage(item) && (
                           <a
-                            href={attachmentUrl(item.fileToken)}
+                            href={attachmentUrl(item.fileToken, item.name)}
                             target="_blank"
                             rel="noreferrer"
                           >
                             <img
-                              src={attachmentUrl(item.fileToken)}
+                              src={attachmentUrl(item.fileToken, item.name)}
                               alt={item.name}
                               style={{
                                 display: "block",
@@ -341,7 +341,7 @@ export default function OvertimeReviewPage() {
                             {item.name || "Attachment"}
                           </div>
                           <a
-                            href={attachmentUrl(item.fileToken)}
+                            href={attachmentUrl(item.fileToken, item.name)}
                             target="_blank"
                             rel="noreferrer"
                             className="btn btnGhost"
