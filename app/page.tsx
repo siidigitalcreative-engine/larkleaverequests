@@ -116,6 +116,8 @@ export default function Home() {
   const [currentOffDate, setCurrentOffDate] = useState("");
   const [requestedNewOffDate, setRequestedNewOffDate] = useState("");
   const [changeOffReason, setChangeOffReason] = useState("");
+  const [changeOffAttachment, setChangeOffAttachment] =
+    useState<File | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -310,6 +312,7 @@ export default function Home() {
     setCurrentOffDate("");
     setRequestedNewOffDate("");
     setChangeOffReason("");
+    setChangeOffAttachment(null);
   }
 
   async function submitLeave(event: FormEvent) {
@@ -387,14 +390,19 @@ export default function Home() {
         );
       }
 
+      const form = new FormData();
+
+      form.set("currentOffDate", currentOffDate);
+      form.set("requestedNewOffDate", requestedNewOffDate);
+      form.set("reason", changeOffReason);
+
+      if (changeOffAttachment) {
+        form.set("attachment", changeOffAttachment);
+      }
+
       const response = await fetch("/api/change-day-off", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentOffDate,
-          requestedNewOffDate,
-          reason: changeOffReason,
-        }),
+        body: form,
       });
 
       const data = await response.json();
@@ -1513,8 +1521,6 @@ export default function Home() {
                           maxWidth: "100%",
                           boxSizing: "border-box",
                         }}
-                        min={week.start}
-                        max={week.end}
                         value={requestedNewOffDate}
                         onChange={(event) =>
                           setRequestedNewOffDate(
@@ -1549,6 +1555,26 @@ export default function Home() {
                     placeholder="Enter the reason for changing your off-date"
                     required
                   />
+                </label>
+
+                <label className="field">
+                  <span className="label">Attachment</span>
+                  <input
+                    className="input"
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(event) =>
+                      setChangeOffAttachment(
+                        event.target.files?.[0] || null,
+                      )
+                    }
+                  />
+                  <div
+                    className="small"
+                    style={{ marginTop: 5 }}
+                  >
+                    Optional. Image or PDF, maximum 10 MB.
+                  </div>
                 </label>
 
                 <div className="divider" />
