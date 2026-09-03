@@ -4,9 +4,18 @@ import { z } from "zod";
 import {
   createChangeOffApprovalGroupRecord,
   createChangeOffRequest,
-  sendChangeOffApprovalCard,
+  uploadLeaveAttachment,
 } from "@/lib/lark";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
+import { uploadApprovalCardImage } from "@/lib/approval-attachments";
+import {
+  attachToChangeOffApprovalCopy,
+  attachToChangeOffMaster,
+  sendChangeOffApprovalCardEnhanced,
+} from "@/lib/change-off-enhanced";
+import {
+  SESSION_COOKIE_NAME,
+  verifySessionToken,
+} from "@/lib/session";
 import { makeReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -18,7 +27,10 @@ const schema = z.object({
 });
 
 function manilaTodayParts() {
-  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const now = new Date(
+    Date.now() + 8 * 60 * 60 * 1000,
+  );
+
   return {
     year: now.getUTCFullYear(),
     month: now.getUTCMonth(),
@@ -28,21 +40,32 @@ function manilaTodayParts() {
 }
 
 function ymd(date: Date) {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+  return `${date.getUTCFullYear()}-${String(
+    date.getUTCMonth() + 1,
+  ).padStart(2, "0")}-${String(
+    date.getUTCDate(),
+  ).padStart(2, "0")}`;
 }
 
 function currentManilaWeek() {
   const p = manilaTodayParts();
-  const today = new Date(Date.UTC(p.year, p.month, p.day));
+  const today = new Date(
+    Date.UTC(p.year, p.month, p.day),
+  );
   const daysSinceMonday = (p.weekday + 6) % 7;
 
   const monday = new Date(today);
-  monday.setUTCDate(today.getUTCDate() - daysSinceMonday);
+  monday.setUTCDate(
+    today.getUTCDate() - daysSinceMonday,
+  );
 
   const sunday = new Date(monday);
   sunday.setUTCDate(monday.getUTCDate() + 6);
 
-  return { start: ymd(monday), end: ymd(sunday) };
+  return {
+    start: ymd(monday),
+    end: ymd(sunday),
+  };
 }
 
 export async function POST(request: Request) {
@@ -53,12 +76,25 @@ export async function POST(request: Request) {
 
     if (!session) {
       return NextResponse.json(
-        { error: "Please verify your identity again." },
+        {
+          error:
+            "Please verify your identity again.",
+        },
         { status: 401 },
       );
     }
 
-    const body = schema.parse(await request.json());
+    const form = await request.formData();
+
+    const body = schema.parse({
+      currentOffDate: String(
+        form.get("currentOffDate") ?? "",
+      ),
+      requestedNewOffDate: String(
+        form.get("requestedNewOffDate") ?? "",
+      ),
+      reason: String(form.get("reason") ?? ""),
+    });
 
     const week = currentManilaWeek();
 
@@ -68,17 +104,73 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json(
         {
-          error: `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
+          error:
+            `Requested New Off-Date must be within this week ` +
+            `(${week.start} to ${week.end}).`,
         },
         { status: 400 },
       );
     }
 
-    if (body.currentOffDate === body.requestedNewOffDate) {
+    if (
+      body.currentOffDate ===
+      body.requestedNewOffDate
+    ) {
       return NextResponse.json(
-        { error: "Current and requested new off-date cannot be the same." },
+        {
+          error:
+            "Current and requested new off-date cannot be the same.",
+        },
         { status: 400 },
       );
+    }
+
+    let attachmentToken: string | undefined;
+    let attachmentImageKey: string | undefined;
+    let attachmentName: string | undefined;
+
+    const attachment = form.get("attachment");
+
+    if (
+      attachment instanceof File &&
+      attachment.size > 0
+    ) {
+      if (attachment.size > 10 * 1024 * 1024) {
+        return NextResponse.json(
+          {
+            error:
+              "Attachment must be 10 MB or smaller.",
+          },
+          { status: 400 },
+        );
+      }
+
+      attachmentName =
+        attachment.name ||
+        "Change Day-Off attachment";
+
+      attachmentToken =
+        await uploadLeaveAttachment(attachment);
+
+      if (
+        attachment.type
+          .toLowerCase()
+          .startsWith("image/")
+      ) {
+        try {
+          attachmentImageKey =
+            await uploadApprovalCardImage(
+              attachment,
+            );
+        } catch (error) {
+          // Master request should still succeed if
+          // inline image preview cannot be uploaded.
+          console.error(
+            "Change Day-Off card image upload failed:",
+            error,
+          );
+        }
+      }
     }
 
     const submittedAt = Date.now();
@@ -87,29 +179,68 @@ export async function POST(request: Request) {
       employeeId: session.employeeId,
       employeeName: session.employeeName,
       department: session.department,
-      approvalGroup: session.leaveApprovalGroup,
+      approvalGroup:
+        session.leaveApprovalGroup,
       currentOffDate: body.currentOffDate,
-      requestedNewOffDate: body.requestedNewOffDate,
+      requestedNewOffDate:
+        body.requestedNewOffDate,
       reason: body.reason,
       submittedAt,
     };
 
-    // Master record first.
-    const created = await createChangeOffRequest(input);
-    const reviewToken = makeReviewToken(`change-off:${created.recordId}`);
+    // 1) Create master record first.
+    const created =
+      await createChangeOffRequest(input);
 
-    // Secondary routing should not cause duplicate master records on retry.
+    const reviewToken = makeReviewToken(
+      `change-off:${created.recordId}`,
+    );
+
     const routingWarnings: string[] = [];
 
+    // 2) Add attachment to master record.
+    if (attachmentToken) {
+      try {
+        const result =
+          await attachToChangeOffMaster(
+            created.recordId,
+            attachmentToken,
+          );
+
+        if (
+          !result.updated &&
+          result.warning
+        ) {
+          routingWarnings.push(result.warning);
+        }
+      } catch (error) {
+        routingWarnings.push(
+          error instanceof Error
+            ? error.message
+            : "Unable to save Change Day-Off attachment.",
+        );
+      }
+    }
+
+    // 3) Create approval-group copy.
+    let approvalRecordCreated = false;
+
     try {
-      const approvalRecord = await createChangeOffApprovalGroupRecord({
-        ...input,
-        mainRecordId: created.recordId,
-        requestId: created.requestId,
-      });
+      const approvalRecord =
+        await createChangeOffApprovalGroupRecord(
+          {
+            ...input,
+            mainRecordId: created.recordId,
+            requestId: created.requestId,
+          },
+        );
 
       if (!approvalRecord.created) {
-        routingWarnings.push(approvalRecord.reason);
+        routingWarnings.push(
+          approvalRecord.reason,
+        );
+      } else {
+        approvalRecordCreated = true;
       }
     } catch (error) {
       routingWarnings.push(
@@ -119,12 +250,51 @@ export async function POST(request: Request) {
       );
     }
 
+    // 4) Copy attachment to approval-group record.
+    if (
+      attachmentToken &&
+      approvalRecordCreated
+    ) {
+      try {
+        const result =
+          await attachToChangeOffApprovalCopy({
+            approvalGroup:
+              input.approvalGroup,
+            mainRecordId:
+              created.recordId,
+            requestId: created.requestId,
+            attachmentToken,
+          });
+
+        if (
+          !result.updated &&
+          result.warning
+        ) {
+          routingWarnings.push(result.warning);
+        }
+      } catch (error) {
+        routingWarnings.push(
+          error instanceof Error
+            ? error.message
+            : "Unable to sync attachment to approval table.",
+        );
+      }
+    }
+
+    // 5) Send approval card with Date Filed
+    // and inline image preview when applicable.
     try {
-      await sendChangeOffApprovalCard({
-        ...input,
-        ...created,
-        reviewToken,
-      });
+      await sendChangeOffApprovalCardEnhanced(
+        {
+          ...input,
+          recordId: created.recordId,
+          requestId: created.requestId,
+          reviewToken,
+          attachmentToken,
+          attachmentImageKey,
+          attachmentName,
+        },
+      );
     } catch (error) {
       routingWarnings.push(
         error instanceof Error
