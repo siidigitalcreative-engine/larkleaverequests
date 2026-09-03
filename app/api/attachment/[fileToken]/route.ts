@@ -4,8 +4,21 @@ import { getTenantAccessToken } from "@/lib/lark";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function contentTypeFromName(name: string) {
+  const lower = name.toLowerCase();
+
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+
+  return "";
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { fileToken: string } },
 ) {
   try {
@@ -17,6 +30,9 @@ export async function GET(
         { status: 400 },
       );
     }
+
+    const url = new URL(request.url);
+    const fileName = String(url.searchParams.get("name") || "attachment").trim();
 
     const token = await getTenantAccessToken();
 
@@ -32,7 +48,7 @@ export async function GET(
       },
     );
 
-    if (!response.ok || !response.body) {
+    if (!response.ok) {
       const message = await response.text().catch(() => "");
       return NextResponse.json(
         {
@@ -44,26 +60,46 @@ export async function GET(
       );
     }
 
+    const bytes = await response.arrayBuffer();
+
+    if (!bytes.byteLength) {
+      return NextResponse.json(
+        { error: "Attachment download returned an empty file." },
+        { status: 502 },
+      );
+    }
+
+    const upstreamType =
+      response.headers.get("content-type") || "";
+
+    const inferredType = contentTypeFromName(fileName);
+
+    // Lark may return application/octet-stream for Base attachments.
+    // For browser previews, use the known filename extension when possible.
+    const contentType =
+      inferredType ||
+      (upstreamType &&
+      upstreamType !== "application/octet-stream"
+        ? upstreamType
+        : "application/octet-stream");
+
+    const safeName =
+      fileName.replace(/[\r\n"]/g, "") || "attachment";
+
     const headers = new Headers();
 
+    headers.set("Content-Type", contentType);
     headers.set(
-      "Content-Type",
-      response.headers.get("content-type") ||
-        "application/octet-stream",
+      "Content-Disposition",
+      `inline; filename="${safeName}"`,
     );
     headers.set(
       "Cache-Control",
       "private, no-store, no-cache, max-age=0",
     );
+    headers.set("X-Content-Type-Options", "nosniff");
 
-    const disposition =
-      response.headers.get("content-disposition");
-
-    if (disposition) {
-      headers.set("Content-Disposition", disposition);
-    }
-
-    return new Response(response.body, {
+    return new Response(bytes, {
       status: 200,
       headers,
     });
