@@ -74,10 +74,14 @@ function dateFiledText(value: number) {
   }).format(new Date(value));
 }
 
-function attachmentUrl(fileToken: string) {
-  return `/api/attachment/${encodeURIComponent(
-    fileToken,
-  )}`;
+function attachmentUrl(
+  fileToken: string,
+  fileName = "attachment",
+) {
+  return (
+    `/api/attachment/${encodeURIComponent(fileToken)}` +
+    `?name=${encodeURIComponent(fileName)}`
+  );
 }
 
 function likelyImage(item: Attachment) {
@@ -319,6 +323,7 @@ export default function ReviewPage() {
                             <a
                               href={attachmentUrl(
                                 item.fileToken,
+                                item.name,
                               )}
                               target="_blank"
                               rel="noreferrer"
@@ -329,6 +334,7 @@ export default function ReviewPage() {
                               <img
                                 src={attachmentUrl(
                                   item.fileToken,
+                                  item.name,
                                 )}
                                 alt={item.name}
                                 style={{
@@ -369,6 +375,7 @@ export default function ReviewPage() {
                             <a
                               href={attachmentUrl(
                                 item.fileToken,
+                                item.name,
                               )}
                               target="_blank"
                               rel="noreferrer"
