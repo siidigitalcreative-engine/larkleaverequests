@@ -61,11 +61,14 @@ function filedText(value: number) {
 
 function attachmentUrl(
   fileToken: string,
-  fileName = "attachment",
+  fileName: string,
+  recordId: string,
 ) {
   return (
     `/api/attachment/${encodeURIComponent(fileToken)}` +
-    `?name=${encodeURIComponent(fileName)}`
+    `?source=change-off` +
+    `&recordId=${encodeURIComponent(recordId)}` +
+    `&name=${encodeURIComponent(fileName || "attachment")}`
   );
 }
 
@@ -372,18 +375,12 @@ export default function ChangeDayOffReviewPage() {
                             item,
                           ) && (
                             <a
-                              href={attachmentUrl(
-                                item.fileToken,
-                                item.name,
-                              )}
+                              href={attachmentUrl(item.fileToken, item.name, params.recordId)}
                               target="_blank"
                               rel="noreferrer"
                             >
                               <img
-                                src={attachmentUrl(
-                                  item.fileToken,
-                                  item.name,
-                                )}
+                                src={attachmentUrl(item.fileToken, item.name, params.recordId)}
                                 alt={
                                   item.name
                                 }
@@ -430,10 +427,7 @@ export default function ChangeDayOffReviewPage() {
                             </div>
 
                             <a
-                              href={attachmentUrl(
-                                item.fileToken,
-                                item.name,
-                              )}
+                              href={attachmentUrl(item.fileToken, item.name, params.recordId)}
                               target="_blank"
                               rel="noreferrer"
                               className="btn btnGhost"
