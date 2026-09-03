@@ -61,10 +61,12 @@ function filedText(value: number) {
 
 function attachmentUrl(
   fileToken: string,
+  fileName = "attachment",
 ) {
-  return `/api/attachment/${encodeURIComponent(
-    fileToken,
-  )}`;
+  return (
+    `/api/attachment/${encodeURIComponent(fileToken)}` +
+    `?name=${encodeURIComponent(fileName)}`
+  );
 }
 
 function likelyImage(item: Attachment) {
@@ -372,6 +374,7 @@ export default function ChangeDayOffReviewPage() {
                             <a
                               href={attachmentUrl(
                                 item.fileToken,
+                                item.name,
                               )}
                               target="_blank"
                               rel="noreferrer"
@@ -379,6 +382,7 @@ export default function ChangeDayOffReviewPage() {
                               <img
                                 src={attachmentUrl(
                                   item.fileToken,
+                                  item.name,
                                 )}
                                 alt={
                                   item.name
@@ -428,6 +432,7 @@ export default function ChangeDayOffReviewPage() {
                             <a
                               href={attachmentUrl(
                                 item.fileToken,
+                                item.name,
                               )}
                               target="_blank"
                               rel="noreferrer"
