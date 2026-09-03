@@ -6,10 +6,14 @@ import {
   createLeaveRequest,
   listNotifyContacts,
   sendDirectNotifyMessage,
-  sendLeaveApprovalCard,
   uploadLeaveAttachment,
 } from "@/lib/lark";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/session";
+import { uploadApprovalCardImage } from "@/lib/approval-attachments";
+import { sendLeaveApprovalCardEnhanced } from "@/lib/approval-cards";
+import {
+  SESSION_COOKIE_NAME,
+  verifySessionToken,
+} from "@/lib/session";
 import { makeReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -26,29 +30,47 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = verifySessionToken(cookies().get(SESSION_COOKIE_NAME)?.value);
+    const session = verifySessionToken(
+      cookies().get(SESSION_COOKIE_NAME)?.value,
+    );
+
     if (!session) {
-      return NextResponse.json({ error: "Please verify your identity again." }, { status: 401 });
+      return NextResponse.json(
+        { error: "Please verify your identity again." },
+        { status: 401 },
+      );
     }
 
     const form = await request.formData();
+
     const parsed = schema.parse({
       leaveType: String(form.get("leaveType") ?? ""),
       startDate: String(form.get("startDate") ?? ""),
       endDate: String(form.get("endDate") ?? ""),
       dayType: String(form.get("dayType") ?? ""),
-      startTime: String(form.get("startTime") ?? "") || undefined,
-      endTime: String(form.get("endTime") ?? "") || undefined,
+      startTime:
+        String(form.get("startTime") ?? "") || undefined,
+      endTime:
+        String(form.get("endTime") ?? "") || undefined,
       reason: String(form.get("reason") ?? ""),
     });
 
     if (parsed.endDate < parsed.startDate) {
-      return NextResponse.json({ error: "End date cannot be before start date." }, { status: 400 });
+      return NextResponse.json(
+        { error: "End date cannot be before start date." },
+        { status: 400 },
+      );
     }
 
-    if (parsed.dayType === "Partial Day" && (!parsed.startTime || !parsed.endTime)) {
+    if (
+      parsed.dayType === "Partial Day" &&
+      (!parsed.startTime || !parsed.endTime)
+    ) {
       return NextResponse.json(
-        { error: "Start and end time are required for Partial Day leave." },
+        {
+          error:
+            "Start and end time are required for Partial Day leave.",
+        },
         { status: 400 },
       );
     }
@@ -59,6 +81,9 @@ export async function POST(request: Request) {
       .filter(Boolean);
 
     let attachmentToken: string | undefined;
+    let attachmentImageKey: string | undefined;
+    let attachmentName: string | undefined;
+
     const attachment = form.get("attachment");
 
     if (attachment instanceof File && attachment.size > 0) {
@@ -69,7 +94,30 @@ export async function POST(request: Request) {
         );
       }
 
-      attachmentToken = await uploadLeaveAttachment(attachment);
+      attachmentName =
+        attachment.name || "Leave attachment";
+
+      attachmentToken =
+        await uploadLeaveAttachment(attachment);
+
+      // For image attachments, also upload a copy to Lark IM so
+      // the Custom Bot approval card can show an actual image preview.
+      if (
+        attachment.type
+          .toLowerCase()
+          .startsWith("image/")
+      ) {
+        try {
+          attachmentImageKey =
+            await uploadApprovalCardImage(attachment);
+        } catch (error) {
+          // Do not fail the Leave request if inline-card image upload fails.
+          console.error(
+            "Leave card image upload failed:",
+            error,
+          );
+        }
+      }
     }
 
     const submittedAt = Date.now();
@@ -85,24 +133,20 @@ export async function POST(request: Request) {
       submittedAt,
     };
 
-    // 1) Always create the master Leave Requests record first.
     const created = await createLeaveRequest(input);
     const reviewToken = makeReviewToken(created.recordId);
 
-    // Anything after the master record is created is treated as delivery/routing.
-    // A delivery failure must NOT return a generic submission failure that could
-    // cause the employee to retry and accidentally create a duplicate master record.
     const routingWarnings: string[] = [];
     let approvalRecordCreated = false;
     let approvalTableId = "";
 
-    // 2) Copy the request into the approval group's configured Base table.
     try {
-      const approvalRecord = await createApprovalGroupRecord({
-        ...input,
-        mainRecordId: created.recordId,
-        requestId: created.requestId,
-      });
+      const approvalRecord =
+        await createApprovalGroupRecord({
+          ...input,
+          mainRecordId: created.recordId,
+          requestId: created.requestId,
+        });
 
       if (!approvalRecord.created) {
         routingWarnings.push(approvalRecord.reason);
@@ -118,12 +162,25 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3) Keep the existing approval-group webhook card.
     try {
-      await sendLeaveApprovalCard({
-        ...input,
-        ...created,
+      await sendLeaveApprovalCardEnhanced({
+        employeeId: input.employeeId,
+        employeeName: input.employeeName,
+        department: input.department,
+        approvalGroup: input.approvalGroup,
+        leaveType: input.leaveType,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dayType: input.dayType,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        reason: input.reason,
+        submittedAt: input.submittedAt,
+        recordId: created.recordId,
+        requestId: created.requestId,
         reviewToken,
+        attachmentImageKey,
+        attachmentName,
       });
     } catch (error) {
       routingWarnings.push(
@@ -133,7 +190,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4) Keep optional direct notify contacts.
     const notifyFailures: string[] = [];
 
     try {
@@ -170,8 +226,14 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Leave request failed:", error);
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Leave request failed." },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Leave request failed.",
+      },
       { status: 500 },
     );
   }
