@@ -4,17 +4,84 @@ import { getTenantAccessToken } from "@/lib/lark";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type SourceType = "leave" | "overtime" | "change-off";
+
+function tableIdForSource(source: SourceType) {
+  if (source === "leave") {
+    const value = process.env.LARK_LEAVE_TABLE_ID;
+    if (!value) throw new Error("Missing LARK_LEAVE_TABLE_ID");
+    return value;
+  }
+
+  if (source === "overtime") {
+    const value = process.env.LARK_OVERTIME_TABLE_ID;
+    if (!value) throw new Error("Missing LARK_OVERTIME_TABLE_ID");
+    return value;
+  }
+
+  const value = process.env.LARK_CHANGE_OFF_TABLE_ID;
+  if (!value) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+  return value;
+}
+
 function contentTypeFromName(name: string) {
   const lower = name.toLowerCase();
 
   if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
   if (lower.endsWith(".webp")) return "image/webp";
   if (lower.endsWith(".gif")) return "image/gif";
   if (lower.endsWith(".bmp")) return "image/bmp";
   if (lower.endsWith(".pdf")) return "application/pdf";
 
   return "";
+}
+
+async function attachmentFieldId(
+  appToken: string,
+  tableId: string,
+) {
+  const token = await getTenantAccessToken();
+  const url = new URL(
+    `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields`,
+  );
+  url.searchParams.set("page_size", "100");
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || data.code !== 0) {
+    throw new Error(
+      `Unable to read Base fields: ${data.msg || response.statusText}`,
+    );
+  }
+
+  const fields = data.data?.items ?? [];
+
+  const attachment = fields.find(
+    (field: any) =>
+      String(field?.field_name ?? "").trim() === "Attachment",
+  );
+
+  const fieldId = String(
+    attachment?.field_id ?? attachment?.fieldId ?? "",
+  ).trim();
+
+  if (!fieldId) {
+    throw new Error(
+      'Attachment field was not found. The field must be named exactly "Attachment".',
+    );
+  }
+
+  return fieldId;
 }
 
 export async function GET(
@@ -32,24 +99,81 @@ export async function GET(
     }
 
     const url = new URL(request.url);
-    const fileName = String(url.searchParams.get("name") || "attachment").trim();
+
+    const sourceRaw = String(
+      url.searchParams.get("source") || "",
+    ).trim();
+
+    if (
+      sourceRaw !== "leave" &&
+      sourceRaw !== "overtime" &&
+      sourceRaw !== "change-off"
+    ) {
+      return NextResponse.json(
+        { error: "Missing or invalid attachment source." },
+        { status: 400 },
+      );
+    }
+
+    const source = sourceRaw as SourceType;
+    const recordId = String(
+      url.searchParams.get("recordId") || "",
+    ).trim();
+    const fileName = String(
+      url.searchParams.get("name") || "attachment",
+    ).trim();
+
+    if (!recordId) {
+      return NextResponse.json(
+        { error: "Missing attachment record ID." },
+        { status: 400 },
+      );
+    }
+
+    const appToken = process.env.LARK_BASE_APP_TOKEN;
+
+    if (!appToken) {
+      throw new Error("Missing LARK_BASE_APP_TOKEN");
+    }
+
+    const tableId = tableIdForSource(source);
+    const fieldId = await attachmentFieldId(
+      appToken,
+      tableId,
+    );
+
+    const extra = JSON.stringify({
+      bitablePerm: {
+        tableId,
+        attachments: {
+          [fieldId]: {
+            [recordId]: [fileToken],
+          },
+        },
+      },
+    });
 
     const token = await getTenantAccessToken();
 
-    const response = await fetch(
+    const downloadUrl = new URL(
       `https://open.larksuite.com/open-apis/drive/v1/medias/${encodeURIComponent(
         fileToken,
       )}/download`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store",
-      },
     );
+
+    // Required for Base attachments when advanced permissions are enabled.
+    downloadUrl.searchParams.set("extra", extra);
+
+    const response = await fetch(downloadUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
 
     if (!response.ok) {
       const message = await response.text().catch(() => "");
+
       return NextResponse.json(
         {
           error:
@@ -74,8 +198,6 @@ export async function GET(
 
     const inferredType = contentTypeFromName(fileName);
 
-    // Lark may return application/octet-stream for Base attachments.
-    // For browser previews, use the known filename extension when possible.
     const contentType =
       inferredType ||
       (upstreamType &&
@@ -97,7 +219,6 @@ export async function GET(
       "Cache-Control",
       "private, no-store, no-cache, max-age=0",
     );
-    headers.set("X-Content-Type-Options", "nosniff");
 
     return new Response(bytes, {
       status: 200,
