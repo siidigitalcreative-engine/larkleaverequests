@@ -1,7 +1,21 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+import {
+  useParams,
+  useSearchParams,
+} from "next/navigation";
+
+type Attachment = {
+  fileToken: string;
+  name: string;
+  type?: string;
+  size?: number;
+};
 
 type ChangeOffRequest = {
   recordId: string;
@@ -13,8 +27,11 @@ type ChangeOffRequest = {
   currentOffDate: number;
   requestedNewOffDate: number;
   reason: string;
+  submittedAt: number;
+  attachments: Attachment[];
   status: string;
   rejectionReason: string;
+  approvalComment: string;
 };
 
 function dateText(value: number) {
@@ -28,21 +45,83 @@ function dateText(value: number) {
   }).format(new Date(value));
 }
 
-export default function ChangeDayOffReviewPage() {
-  const params = useParams<{ recordId: string }>();
-  const search = useSearchParams();
-  const token = search.get("token") || "";
-  const preset =
-    search.get("decision") === "reject" ? "reject" : "approve";
+function filedText(value: number) {
+  if (!value) return "—";
 
-  const [requestData, setRequestData] =
-    useState<ChangeOffRequest | null>(null);
-  const [decision] = useState<"approve" | "reject">(preset);
-  const [rejectionReason, setRejectionReason] = useState("");
-  const [approvalComment, setApprovalComment] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [done, setDone] = useState(false);
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(value));
+}
+
+function attachmentUrl(
+  fileToken: string,
+) {
+  return `/api/attachment/${encodeURIComponent(
+    fileToken,
+  )}`;
+}
+
+function likelyImage(item: Attachment) {
+  if (
+    item.type
+      ?.toLowerCase()
+      .startsWith("image/")
+  ) {
+    return true;
+  }
+
+  return /\.(png|jpe?g|webp|gif|bmp)$/i.test(
+    item.name || "",
+  );
+}
+
+export default function ChangeDayOffReviewPage() {
+  const params =
+    useParams<{ recordId: string }>();
+
+  const search = useSearchParams();
+  const token =
+    search.get("token") || "";
+
+  const preset =
+    search.get("decision") === "reject"
+      ? "reject"
+      : "approve";
+
+  const [
+    requestData,
+    setRequestData,
+  ] = useState<ChangeOffRequest | null>(
+    null,
+  );
+
+  const [decision] =
+    useState<"approve" | "reject">(
+      preset,
+    );
+
+  const [
+    rejectionReason,
+    setRejectionReason,
+  ] = useState("");
+
+  const [
+    approvalComment,
+    setApprovalComment,
+  ] = useState("");
+
+  const [busy, setBusy] =
+    useState(false);
+  const [message, setMessage] =
+    useState("");
+  const [done, setDone] =
+    useState(false);
 
   useEffect(() => {
     fetch(
@@ -52,16 +131,26 @@ export default function ChangeDayOffReviewPage() {
       { cache: "no-store" },
     )
       .then(async (response) => {
-        const data = await response.json();
+        const data =
+          await response.json();
+
         if (!response.ok) {
-          throw new Error(data.error || "Unable to load request.");
+          throw new Error(
+            data.error ||
+              "Unable to load request.",
+          );
         }
+
         setRequestData(data.request);
       })
-      .catch((error) => setMessage(error.message));
+      .catch((error) =>
+        setMessage(error.message),
+      );
   }, [params.recordId, token]);
 
-  async function submit(event: FormEvent) {
+  async function submit(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setMessage("");
@@ -73,7 +162,10 @@ export default function ChangeDayOffReviewPage() {
         )}`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
           body: JSON.stringify({
             token,
             decision,
@@ -83,14 +175,21 @@ export default function ChangeDayOffReviewPage() {
         },
       );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to process request.");
+        throw new Error(
+          data.error ||
+            "Unable to process request.",
+        );
       }
 
       setDone(true);
-      setMessage(`Change Day-Off request ${data.decision.toLowerCase()}.`);
+
+      setMessage(
+        `Change Day-Off request ${data.decision.toLowerCase()}.`,
+      );
 
       setRequestData((previous) =>
         previous
@@ -98,6 +197,7 @@ export default function ChangeDayOffReviewPage() {
               ...previous,
               status: data.decision,
               rejectionReason,
+              approvalComment,
             }
           : previous,
       );
@@ -116,30 +216,47 @@ export default function ChangeDayOffReviewPage() {
     <main className="shell">
       <div className="wrap">
         <div className="brand">
-          <div className="brandMark">A</div>
+          <div className="brandMark">
+            A
+          </div>
           <div>
             <h1>Approvals</h1>
-            <p>Request review</p>
+            <p>
+              Change Day-Off review
+            </p>
           </div>
         </div>
 
         <div className="card">
           {!requestData ? (
-            <div>{message || "Loading request…"}</div>
+            <div>
+              {message ||
+                "Loading request…"}
+            </div>
           ) : (
             <>
               <div className="between">
                 <div>
                   <h2 className="sectionTitle">
-                    {requestData.employeeName}&apos;s Change Day-Off
+                    {
+                      requestData.employeeName
+                    }
+                    &apos;s Change
+                    Day-Off
                   </h2>
-                  <div className="small">{requestData.requestId}</div>
+                  <div className="small">
+                    {
+                      requestData.requestId
+                    }
+                  </div>
                 </div>
 
                 <span
                   className={`pill ${requestData.status.toLowerCase()}`}
                 >
-                  {requestData.status}
+                  {
+                    requestData.status
+                  }
                 </span>
               </div>
 
@@ -147,37 +264,197 @@ export default function ChangeDayOffReviewPage() {
 
               <div className="reviewFacts">
                 <div className="fact">
-                  <strong>Current Off-Date</strong>
-                  <div>{dateText(requestData.currentOffDate)}</div>
+                  <strong>
+                    Current Off-Date
+                  </strong>
+                  <div>
+                    {dateText(
+                      requestData.currentOffDate,
+                    )}
+                  </div>
                 </div>
 
                 <div className="fact">
-                  <strong>Requested New Off-Date</strong>
-                  <div>{dateText(requestData.requestedNewOffDate)}</div>
+                  <strong>
+                    Requested New
+                    Off-Date
+                  </strong>
+                  <div>
+                    {dateText(
+                      requestData.requestedNewOffDate,
+                    )}
+                  </div>
                 </div>
 
                 <div className="fact">
-                  <strong>Department</strong>
-                  <div>{requestData.department || "—"}</div>
+                  <strong>
+                    Date Filed
+                  </strong>
+                  <div>
+                    {filedText(
+                      requestData.submittedAt,
+                    )}
+                  </div>
                 </div>
 
                 <div className="fact">
-                  <strong>Approval Group</strong>
-                  <div>{requestData.approvalGroup}</div>
+                  <strong>
+                    Department
+                  </strong>
+                  <div>
+                    {requestData.department ||
+                      "—"}
+                  </div>
                 </div>
-              </div>
 
-              <div className="field">
-                <span className="label">Reason for Change</span>
                 <div className="fact">
-                  <div style={{ fontWeight: 500, lineHeight: 1.55 }}>
-                    {requestData.reason}
+                  <strong>
+                    Approval Group
+                  </strong>
+                  <div>
+                    {
+                      requestData.approvalGroup
+                    }
                   </div>
                 </div>
               </div>
 
-              {requestData.status !== "Pending" || done ? (
-                <div className="status success" style={{ marginTop: 18 }}>
+              <div className="field">
+                <span className="label">
+                  Reason for Change
+                </span>
+
+                <div className="fact">
+                  <div
+                    style={{
+                      fontWeight: 500,
+                      lineHeight: 1.55,
+                      whiteSpace:
+                        "pre-wrap",
+                    }}
+                  >
+                    {
+                      requestData.reason
+                    }
+                  </div>
+                </div>
+              </div>
+
+              {requestData
+                .attachments?.length >
+                0 && (
+                <div className="field">
+                  <span className="label">
+                    Attachment
+                  </span>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 12,
+                    }}
+                  >
+                    {requestData.attachments.map(
+                      (item) => (
+                        <div
+                          key={
+                            item.fileToken
+                          }
+                          className="fact"
+                          style={{
+                            overflow:
+                              "hidden",
+                          }}
+                        >
+                          {likelyImage(
+                            item,
+                          ) && (
+                            <a
+                              href={attachmentUrl(
+                                item.fileToken,
+                              )}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <img
+                                src={attachmentUrl(
+                                  item.fileToken,
+                                )}
+                                alt={
+                                  item.name
+                                }
+                                style={{
+                                  display:
+                                    "block",
+                                  width:
+                                    "100%",
+                                  maxHeight:
+                                    520,
+                                  objectFit:
+                                    "contain",
+                                  borderRadius:
+                                    10,
+                                  background:
+                                    "#f8fafc",
+                                }}
+                              />
+                            </a>
+                          )}
+
+                          <div
+                            className="between"
+                            style={{
+                              marginTop:
+                                likelyImage(
+                                  item,
+                                )
+                                  ? 10
+                                  : 0,
+                            }}
+                          >
+                            <div
+                              className="small"
+                              style={{
+                                fontWeight:
+                                  700,
+                                wordBreak:
+                                  "break-word",
+                              }}
+                            >
+                              {item.name ||
+                                "Attachment"}
+                            </div>
+
+                            <a
+                              href={attachmentUrl(
+                                item.fileToken,
+                              )}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btnGhost"
+                              style={{
+                                textDecoration:
+                                  "none",
+                              }}
+                            >
+                              View
+                            </a>
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {requestData.status !==
+                "Pending" || done ? (
+                <div
+                  className="status success"
+                  style={{
+                    marginTop: 18,
+                  }}
+                >
                   {message ||
                     `This request has already been ${requestData.status.toLowerCase()}.`}
                 </div>
@@ -186,39 +463,67 @@ export default function ChangeDayOffReviewPage() {
                   <div className="divider" />
 
                   <h3 className="sectionTitle">
-                    {decision === "approve"
+                    {decision ===
+                    "approve"
                       ? "Approve Change Day-Off"
                       : "Reject Change Day-Off"}
                   </h3>
 
                   <p className="muted">
-                    {decision === "approve"
+                    {decision ===
+                    "approve"
                       ? "Confirm that you want to approve this request."
                       : "Enter the reason for rejecting this request."}
                   </p>
 
-                  {decision === "approve" && (
+                  {decision ===
+                    "approve" && (
                     <label className="field">
-                      <span className="label">Approval Comment</span>
+                      <span className="label">
+                        Approval
+                        Comment
+                      </span>
+
                       <textarea
                         className="textarea"
-                        value={approvalComment}
-                        onChange={(event) =>
-                          setApprovalComment(event.target.value)
+                        value={
+                          approvalComment
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setApprovalComment(
+                            event
+                              .target
+                              .value,
+                          )
                         }
                         placeholder="Add an optional approval comment"
                       />
                     </label>
                   )}
 
-                  {decision === "reject" && (
+                  {decision ===
+                    "reject" && (
                     <label className="field">
-                      <span className="label">Rejection Reason *</span>
+                      <span className="label">
+                        Rejection
+                        Reason *
+                      </span>
+
                       <textarea
                         className="textarea"
-                        value={rejectionReason}
-                        onChange={(event) =>
-                          setRejectionReason(event.target.value)
+                        value={
+                          rejectionReason
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setRejectionReason(
+                            event
+                              .target
+                              .value,
+                          )
                         }
                         placeholder="Enter rejection reason"
                         required
@@ -228,16 +533,21 @@ export default function ChangeDayOffReviewPage() {
 
                   <button
                     className={`btn ${
-                      decision === "approve"
+                      decision ===
+                      "approve"
                         ? "btnPrimary"
                         : "btnDanger"
                     }`}
                     disabled={busy}
-                    style={{ width: "100%", marginTop: 18 }}
+                    style={{
+                      width: "100%",
+                      marginTop: 18,
+                    }}
                   >
                     {busy
                       ? "Processing…"
-                      : decision === "approve"
+                      : decision ===
+                          "approve"
                         ? "Confirm Approval"
                         : "Confirm Rejection"}
                   </button>
@@ -245,7 +555,9 @@ export default function ChangeDayOffReviewPage() {
               )}
 
               {message && !done && (
-                <div className="status error">{message}</div>
+                <div className="status error">
+                  {message}
+                </div>
               )}
             </>
           )}
