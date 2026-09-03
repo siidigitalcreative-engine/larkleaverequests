@@ -5,6 +5,7 @@ import {
   updateApprovalGroupDecision,
   updateLeaveDecision,
 } from "@/lib/lark";
+import { extractApprovalAttachments } from "@/lib/approval-attachments";
 import { verifyReviewToken } from "@/lib/reviewToken";
 
 export const runtime = "nodejs";
@@ -15,7 +16,10 @@ function text(value: unknown) {
 
 function dateText(value: unknown) {
   const timestamp = Number(value);
-  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
 
   return new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
@@ -23,6 +27,11 @@ function dateText(value: unknown) {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date(timestamp));
+}
+
+function numberValue(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 export async function GET(
@@ -52,15 +61,21 @@ export async function GET(
         department: text(f["Department"]),
         approvalGroup: text(f["Approval Group"]),
         leaveType: text(f["Leave Type"]),
-        startDate: f["Start Date"],
-        endDate: f["End Date"],
+        startDate: numberValue(f["Start Date"]),
+        endDate: numberValue(f["End Date"]),
         dayType: text(f["Day Type"]),
-        startTime: text(f["Start Time"]),
-        endTime: text(f["End Time"]),
+        // Keep these numeric. The UI formats them as Manila time.
+        startTime: numberValue(f["Start Time"]),
+        endTime: numberValue(f["End Time"]),
         reason: text(f["Reason"]),
-        status: text(f["Status"]),
+        status: text(f["Status"]) || "Pending",
+        submittedAt: numberValue(f["Submitted At"]),
         approvedBy: text(f["Approved By"]),
         rejectionReason: text(f["Rejection Reason"]),
+        approvalComment: text(f["Approval Comment"]),
+        attachments: extractApprovalAttachments(
+          f["Attachment"],
+        ),
       },
     });
   } catch (error) {
@@ -82,7 +97,8 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const token = typeof body.token === "string" ? body.token : "";
+    const token =
+      typeof body.token === "string" ? body.token : "";
 
     if (!verifyReviewToken(params.recordId, token)) {
       return NextResponse.json(
@@ -111,7 +127,9 @@ export async function POST(
 
     if (currentStatus && currentStatus !== "Pending") {
       return NextResponse.json(
-        { error: `This request is already ${currentStatus}.` },
+        {
+          error: `This request is already ${currentStatus}.`,
+        },
         { status: 409 },
       );
     }
@@ -119,14 +137,16 @@ export async function POST(
     const rejectionReason = text(body.rejectionReason);
     const approvalComment = text(body.approvalComment);
 
-    if (decision === "Rejected" && rejectionReason.length < 2) {
+    if (
+      decision === "Rejected" &&
+      rejectionReason.length < 2
+    ) {
       return NextResponse.json(
         { error: "Please enter a rejection reason." },
         { status: 400 },
       );
     }
 
-    // 1) Main Leave Records table is the source of truth.
     await updateLeaveDecision({
       recordId: params.recordId,
       decision,
@@ -137,8 +157,6 @@ export async function POST(
 
     const warnings: string[] = [];
 
-    // 2) Sync the department/general approval table.
-    // A sync failure must NOT prevent the result card from being sent.
     try {
       await updateApprovalGroupDecision({
         approvalGroup: text(f["Approval Group"]),
@@ -155,11 +173,12 @@ export async function POST(
           : "Unable to sync approval-group table.";
 
       warnings.push(message);
-      console.error("Approval-group table sync failed:", error);
+      console.error(
+        "Approval-group table sync failed:",
+        error,
+      );
     }
 
-    // 3) Always attempt to send the Approved/Rejected result back
-    // to the same Lark approval group, even if step 2 failed.
     try {
       await sendDecisionCard({
         approvalGroup: text(f["Approval Group"]),
