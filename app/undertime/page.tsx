@@ -15,23 +15,23 @@ type Employee = {
 };
 
 function calculateDuration(
-  requestedTimeOut: string,
-  scheduledTimeOut: string,
+  requestedEarlyTimeOut: string,
+  regularTimeOut: string,
 ) {
   if (
-    !requestedTimeOut ||
-    !scheduledTimeOut
+    !requestedEarlyTimeOut ||
+    !regularTimeOut
   ) {
     return 0;
   }
 
   const [rh, rm] =
-    requestedTimeOut
+    requestedEarlyTimeOut
       .split(":")
       .map(Number);
 
   const [sh, sm] =
-    scheduledTimeOut
+    regularTimeOut
       .split(":")
       .map(Number);
 
@@ -66,12 +66,12 @@ export default function UndertimePage() {
   ] = useState("");
 
   const [
-    requestedTimeOut,
+    requestedEarlyTimeOut,
     setRequestedTimeOut,
   ] = useState("");
 
   const [
-    scheduledTimeOut,
+    regularTimeOut,
     setScheduledTimeOut,
   ] = useState("");
 
@@ -110,12 +110,12 @@ export default function UndertimePage() {
     useMemo(
       () =>
         calculateDuration(
-          requestedTimeOut,
-          scheduledTimeOut,
+          requestedEarlyTimeOut,
+          regularTimeOut,
         ),
       [
-        requestedTimeOut,
-        scheduledTimeOut,
+        requestedEarlyTimeOut,
+        regularTimeOut,
       ],
     );
 
@@ -151,11 +151,11 @@ export default function UndertimePage() {
 
     try {
       if (
-        requestedTimeOut >=
-        scheduledTimeOut
+        requestedEarlyTimeOut >=
+        regularTimeOut
       ) {
         throw new Error(
-          "Requested Time Out must be earlier than Scheduled Time Out.",
+          "Requested Early Time Out must be earlier than Regular Time Out.",
         );
       }
 
@@ -168,13 +168,13 @@ export default function UndertimePage() {
       );
 
       form.set(
-        "requestedTimeOut",
-        requestedTimeOut,
+        "requestedEarlyTimeOut",
+        requestedEarlyTimeOut,
       );
 
       form.set(
-        "scheduledTimeOut",
-        scheduledTimeOut,
+        "regularTimeOut",
+        regularTimeOut,
       );
 
       form.set("reason", reason);
@@ -515,14 +515,14 @@ export default function UndertimePage() {
               <div className="grid">
                 <label className="field">
                   <span className="label">
-                    Requested Time Out *
+                    Requested Early Time Out *
                   </span>
 
                   <input
                     className="input"
                     type="time"
                     value={
-                      requestedTimeOut
+                      requestedEarlyTimeOut
                     }
                     onChange={(event) =>
                       setRequestedTimeOut(
@@ -536,14 +536,14 @@ export default function UndertimePage() {
 
                 <label className="field">
                   <span className="label">
-                    Scheduled Time Out *
+                    Regular Time Out *
                   </span>
 
                   <input
                     className="input"
                     type="time"
                     value={
-                      scheduledTimeOut
+                      regularTimeOut
                     }
                     onChange={(event) =>
                       setScheduledTimeOut(
@@ -575,13 +575,13 @@ export default function UndertimePage() {
                             ? ""
                             : "s"
                         }`
-                      : "Select Requested and Scheduled Time Out"}
+                      : "Select Requested and Regular Time Out"}
                   </strong>
 
-                  {requestedTimeOut &&
-                    scheduledTimeOut &&
-                    requestedTimeOut >=
-                      scheduledTimeOut && (
+                  {requestedEarlyTimeOut &&
+                    regularTimeOut &&
+                    requestedEarlyTimeOut >=
+                      regularTimeOut && (
                       <div
                         className="small"
                         style={{
@@ -590,9 +590,9 @@ export default function UndertimePage() {
                             "#b42318",
                         }}
                       >
-                        Requested Time Out
+                        Requested Early Time Out
                         must be earlier than
-                        Scheduled Time Out.
+                        Regular Time Out.
                       </div>
                     )}
                 </div>
@@ -652,8 +652,8 @@ export default function UndertimePage() {
                 disabled={
                   busy ||
                   !undertimeDate ||
-                  !requestedTimeOut ||
-                  !scheduledTimeOut ||
+                  !requestedEarlyTimeOut ||
+                  !regularTimeOut ||
                   durationHours <= 0
                 }
                 style={{
