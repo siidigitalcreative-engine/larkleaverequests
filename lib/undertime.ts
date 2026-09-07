@@ -6,8 +6,8 @@ export type UndertimeInput = {
   department?: string;
   approvalGroup: string;
   undertimeDate: string;
-  requestedTimeOut: string;
-  scheduledTimeOut: string;
+  requestedEarlyTimeOut: string;
+  regularTimeOut: string;
   reason: string;
   submittedAt: number;
   attachmentToken?: string;
@@ -58,22 +58,22 @@ function toDateMs(date: string) {
 
 export function undertimeDateTimes(
   undertimeDate: string,
-  requestedTimeOut: string,
-  scheduledTimeOut: string,
+  requestedEarlyTimeOut: string,
+  regularTimeOut: string,
 ) {
   const requested = new Date(
     `${undertimeDate}T${
-      requestedTimeOut.length === 5
-        ? `${requestedTimeOut}:00`
-        : requestedTimeOut
+      requestedEarlyTimeOut.length === 5
+        ? `${requestedEarlyTimeOut}:00`
+        : requestedEarlyTimeOut
     }+08:00`,
   );
 
   const scheduled = new Date(
     `${undertimeDate}T${
-      scheduledTimeOut.length === 5
-        ? `${scheduledTimeOut}:00`
-        : scheduledTimeOut
+      regularTimeOut.length === 5
+        ? `${regularTimeOut}:00`
+        : regularTimeOut
     }+08:00`,
   );
 
@@ -86,7 +86,7 @@ export function undertimeDateTimes(
 
   if (requested.getTime() >= scheduled.getTime()) {
     throw new Error(
-      "Requested Time Out must be earlier than Scheduled Time Out.",
+      "Requested Early Time Out must be earlier than Regular Time Out.",
     );
   }
 
@@ -449,8 +449,8 @@ export async function createUndertimeRequest(
 
   const times = undertimeDateTimes(
     input.undertimeDate,
-    input.requestedTimeOut,
-    input.scheduledTimeOut,
+    input.requestedEarlyTimeOut,
+    input.regularTimeOut,
   );
 
   if (input.attachmentToken) {
@@ -480,9 +480,9 @@ export async function createUndertimeRequest(
       "Undertime Date": toDateMs(
         input.undertimeDate,
       ),
-      "Requested Time Out":
+      "Requested Early Time Out":
         times.requestedMs,
-      "Scheduled Time Out":
+      "Regular Time Out":
         times.scheduledMs,
       "Duration (Hours)":
         times.durationHours,
@@ -552,8 +552,8 @@ export async function createUndertimeApprovalGroupRecord(
   const times =
     undertimeDateTimes(
       input.undertimeDate,
-      input.requestedTimeOut,
-      input.scheduledTimeOut,
+      input.requestedEarlyTimeOut,
+      input.regularTimeOut,
     );
 
   const hasAttachmentField =
@@ -788,8 +788,8 @@ export async function sendUndertimeApprovalCard(
   const times =
     undertimeDateTimes(
       input.undertimeDate,
-      input.requestedTimeOut,
-      input.scheduledTimeOut,
+      input.requestedEarlyTimeOut,
+      input.regularTimeOut,
     );
 
   const elements: any[] = [
@@ -823,7 +823,7 @@ export async function sendUndertimeApprovalCard(
           text: {
             tag: "lark_md",
             content:
-              `**Requested Time Out**\n${timeText(
+              `**Requested Early Time Out**\n${timeText(
                 times.requestedMs,
               )}`,
           },
@@ -833,7 +833,7 @@ export async function sendUndertimeApprovalCard(
           text: {
             tag: "lark_md",
             content:
-              `**Scheduled Time Out**\n${timeText(
+              `**Regular Time Out**\n${timeText(
                 times.scheduledMs,
               )}`,
           },
@@ -1153,14 +1153,14 @@ export async function listEmployeeUndertimeHistory(
       const requested =
         Number(
           f[
-            "Requested Time Out"
+            "Requested Early Time Out"
           ] ?? 0,
         ) || 0;
 
       const scheduled =
         Number(
           f[
-            "Scheduled Time Out"
+            "Regular Time Out"
           ] ?? 0,
         ) || 0;
 
