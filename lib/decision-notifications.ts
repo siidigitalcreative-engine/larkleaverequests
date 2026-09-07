@@ -170,3 +170,69 @@ export async function sendOvertimeDecisionCardEnhanced(input: {
     ],
   });
 }
+
+
+export async function sendUndertimeDecisionCardEnhanced(input: {
+  approvalGroup: string;
+  employeeName: string;
+  requestId: string;
+  undertimeDate: number;
+  requestedTimeOut: number;
+  scheduledTimeOut: number;
+  durationHours: number;
+  submittedAt: number;
+  decision: "Approved" | "Rejected";
+  rejectionReason: string;
+  approvalComment: string;
+}) {
+  const approved = input.decision === "Approved";
+
+  const detail =
+    approved && input.approvalComment
+      ? `\nApproval Comment: ${input.approvalComment}`
+      : !approved && input.rejectionReason
+        ? `\nRejection Reason: ${input.rejectionReason}`
+        : "";
+
+  const content =
+    `**${input.employeeName}'s Undertime**\n` +
+    `Undertime Date: ${dateText(input.undertimeDate)}\n` +
+    `Requested Time Out: ${timeText(input.requestedTimeOut)}\n` +
+    `Scheduled Time Out: ${timeText(input.scheduledTimeOut)}\n` +
+    `Duration: ${input.durationHours} hour(s)\n` +
+    `Date Filed: **${filedText(input.submittedAt)}**\n` +
+    `Status: **${input.decision}**` +
+    detail;
+
+  await postWebhook(input.approvalGroup, {
+    config: {
+      wide_screen_mode: true,
+      enable_forward: true,
+    },
+    header: {
+      template: approved ? "green" : "red",
+      title: {
+        tag: "plain_text",
+        content: `${input.employeeName} — Undertime ${input.decision}`,
+      },
+    },
+    elements: [
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content,
+        },
+      },
+      {
+        tag: "note",
+        elements: [
+          {
+            tag: "plain_text",
+            content: `Request ${input.requestId} • ${input.decision}`,
+          },
+        ],
+      },
+    ],
+  });
+}
