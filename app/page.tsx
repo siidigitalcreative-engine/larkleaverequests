@@ -22,7 +22,7 @@ type RequestType = "leave" | "changeOff" | "history";
 
 type ApprovalHistoryItem = {
   requestId: string;
-  requestType: "Leave Request" | "Change Day-Off" | "Overtime";
+  requestType: "Leave Request" | "Change Day-Off" | "Overtime" | "Undertime";
   title: string;
   detail: string;
   status: string;
@@ -32,6 +32,7 @@ type ApprovalHistoryItem = {
   currentOffDate?: number;
   requestedNewOffDate?: number;
   overtimeDate?: number;
+  undertimeDate?: number;
   rejectionReason?: string;
 };
 
@@ -135,6 +136,8 @@ export default function Home() {
     useState<HistoryFilter>("All");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+
+  const week = useMemo(() => currentWeekBounds(), []);
 
   useEffect(() => {
     Promise.all([
@@ -379,6 +382,15 @@ export default function Home() {
     setStatus("");
 
     try {
+      if (
+        requestedNewOffDate < week.start ||
+        requestedNewOffDate > week.end
+      ) {
+        throw new Error(
+          `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
+        );
+      }
+
       const form = new FormData();
 
       form.set("currentOffDate", currentOffDate);
@@ -848,6 +860,41 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
+                    window.location.href = "/undertime";
+                  }}
+                  style={{
+                    minHeight: 110,
+                    textAlign: "left",
+                    padding: 20,
+                    background: "#fff4ed",
+                    border: "1px solid #fed7aa",
+                    color: "#c2410c",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Undertime
+                    </strong>
+                    <span
+                      className="small"
+                      style={{ color: "#475467" }}
+                    >
+                      Request an earlier time-out and record
+                      the undertime duration.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
                     setRequestType("history");
                     setHistoryFilter("All");
                     void loadHistory();
@@ -1067,6 +1114,16 @@ export default function Home() {
                           <>
                             {historyDate(
                               item.overtimeDate,
+                            )}
+                            {item.detail
+                              ? ` • ${item.detail}`
+                              : ""}
+                          </>
+                        ) : item.requestType ===
+                          "Undertime" ? (
+                          <>
+                            {historyDate(
+                              item.undertimeDate,
                             )}
                             {item.detail
                               ? ` • ${item.detail}`
@@ -1523,7 +1580,8 @@ export default function Home() {
                       className="small"
                       style={{ marginTop: 5 }}
                     >
-                      Select the new requested off-date.
+                      For this week only:{" "}
+                      {week.start} to {week.end}
                     </div>
                   </label>
                 </div>
