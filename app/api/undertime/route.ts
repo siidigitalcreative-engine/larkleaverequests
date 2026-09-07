@@ -21,8 +21,8 @@ export const runtime = "nodejs";
 
 const schema = z.object({
   undertimeDate: z.string().min(10).max(10),
-  requestedTimeOut: z.string().min(4).max(8),
-  scheduledTimeOut: z.string().min(4).max(8),
+  requestedEarlyTimeOut: z.string().min(4).max(8),
+  regularTimeOut: z.string().min(4).max(8),
   reason: z.string().min(3).max(2000),
 });
 
@@ -45,11 +45,11 @@ export async function POST(request: Request) {
       undertimeDate: String(
         form.get("undertimeDate") ?? "",
       ),
-      requestedTimeOut: String(
-        form.get("requestedTimeOut") ?? "",
+      requestedEarlyTimeOut: String(
+        form.get("requestedEarlyTimeOut") ?? "",
       ),
-      scheduledTimeOut: String(
-        form.get("scheduledTimeOut") ?? "",
+      regularTimeOut: String(
+        form.get("regularTimeOut") ?? "",
       ),
       reason: String(form.get("reason") ?? ""),
     });
@@ -130,10 +130,10 @@ export async function POST(request: Request) {
         currentEmployee.leaveApprovalGroup,
       undertimeDate:
         body.undertimeDate,
-      requestedTimeOut:
-        body.requestedTimeOut,
-      scheduledTimeOut:
-        body.scheduledTimeOut,
+      requestedEarlyTimeOut:
+        body.requestedEarlyTimeOut,
+      regularTimeOut:
+        body.regularTimeOut,
       reason: body.reason,
       submittedAt,
       attachmentToken,
