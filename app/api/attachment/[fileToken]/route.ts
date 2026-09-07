@@ -4,7 +4,7 @@ import { getTenantAccessToken } from "@/lib/lark";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type SourceType = "leave" | "overtime" | "change-off";
+type SourceType = "leave" | "overtime" | "undertime" | "change-off";
 
 function tableIdForSource(source: SourceType) {
   if (source === "leave") {
@@ -16,6 +16,12 @@ function tableIdForSource(source: SourceType) {
   if (source === "overtime") {
     const value = process.env.LARK_OVERTIME_TABLE_ID;
     if (!value) throw new Error("Missing LARK_OVERTIME_TABLE_ID");
+    return value;
+  }
+
+  if (source === "undertime") {
+    const value = process.env.LARK_UNDERTIME_TABLE_ID;
+    if (!value) throw new Error("Missing LARK_UNDERTIME_TABLE_ID");
     return value;
   }
 
@@ -107,6 +113,7 @@ export async function GET(
     if (
       sourceRaw !== "leave" &&
       sourceRaw !== "overtime" &&
+      sourceRaw !== "undertime" &&
       sourceRaw !== "change-off"
     ) {
       return NextResponse.json(
