@@ -177,8 +177,8 @@ export async function sendUndertimeDecisionCardEnhanced(input: {
   employeeName: string;
   requestId: string;
   undertimeDate: number;
-  requestedTimeOut: number;
-  scheduledTimeOut: number;
+  requestedEarlyTimeOut: number;
+  regularTimeOut: number;
   durationHours: number;
   submittedAt: number;
   decision: "Approved" | "Rejected";
@@ -197,8 +197,8 @@ export async function sendUndertimeDecisionCardEnhanced(input: {
   const content =
     `**${input.employeeName}'s Undertime**\n` +
     `Undertime Date: ${dateText(input.undertimeDate)}\n` +
-    `Requested Time Out: ${timeText(input.requestedTimeOut)}\n` +
-    `Scheduled Time Out: ${timeText(input.scheduledTimeOut)}\n` +
+    `Requested Early Time Out: ${timeText(input.requestedEarlyTimeOut)}\n` +
+    `Regular Time Out: ${timeText(input.regularTimeOut)}\n` +
     `Duration: ${input.durationHours} hour(s)\n` +
     `Date Filed: **${filedText(input.submittedAt)}**\n` +
     `Status: **${input.decision}**` +
