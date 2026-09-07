@@ -63,27 +63,27 @@ export async function GET(
     const f =
       record?.fields ?? {};
 
-    const requestedTimeOut =
+    const requestedEarlyTimeOut =
       numberValue(
         f[
-          "Requested Time Out"
+          "Requested Early Time Out"
         ],
       );
 
-    const scheduledTimeOut =
+    const regularTimeOut =
       numberValue(
         f[
-          "Scheduled Time Out"
+          "Regular Time Out"
         ],
       );
 
     const durationHours =
-      requestedTimeOut > 0 &&
-      scheduledTimeOut >
-        requestedTimeOut
+      requestedEarlyTimeOut > 0 &&
+      regularTimeOut >
+        requestedEarlyTimeOut
         ? Math.round(
-            ((scheduledTimeOut -
-              requestedTimeOut) /
+            ((regularTimeOut -
+              requestedEarlyTimeOut) /
               3_600_000) *
               100,
           ) / 100
@@ -132,8 +132,8 @@ export async function GET(
               "Undertime Date"
             ],
           ),
-        requestedTimeOut,
-        scheduledTimeOut,
+        requestedEarlyTimeOut,
+        regularTimeOut,
         durationHours,
         reason:
           text(f["Reason"]),
@@ -328,27 +328,27 @@ export async function POST(
     }
 
     try {
-      const requestedTimeOut =
+      const requestedEarlyTimeOut =
         numberValue(
           f[
-            "Requested Time Out"
+            "Requested Early Time Out"
           ],
         );
 
-      const scheduledTimeOut =
+      const regularTimeOut =
         numberValue(
           f[
-            "Scheduled Time Out"
+            "Regular Time Out"
           ],
         );
 
       const durationHours =
-        requestedTimeOut > 0 &&
-        scheduledTimeOut >
-          requestedTimeOut
+        requestedEarlyTimeOut > 0 &&
+        regularTimeOut >
+          requestedEarlyTimeOut
           ? Math.round(
-              ((scheduledTimeOut -
-                requestedTimeOut) /
+              ((regularTimeOut -
+                requestedEarlyTimeOut) /
                 3_600_000) *
                 100,
             ) / 100
@@ -379,8 +379,8 @@ export async function POST(
                 "Undertime Date"
               ],
             ),
-          requestedTimeOut,
-          scheduledTimeOut,
+          requestedEarlyTimeOut,
+          regularTimeOut,
           durationHours,
           submittedAt:
             numberValue(
