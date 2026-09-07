@@ -25,8 +25,8 @@ type UndertimeRequest = {
   department: string;
   approvalGroup: string;
   undertimeDate: number;
-  requestedTimeOut: number;
-  scheduledTimeOut: number;
+  requestedEarlyTimeOut: number;
+  regularTimeOut: number;
   durationHours: number;
   reason: string;
   submittedAt: number;
@@ -348,22 +348,22 @@ export default function UndertimeReviewPage() {
 
                 <div className="fact">
                   <strong>
-                    Requested Time Out
+                    Requested Early Time Out
                   </strong>
                   <div>
                     {timeText(
-                      requestData.requestedTimeOut,
+                      requestData.requestedEarlyTimeOut,
                     )}
                   </div>
                 </div>
 
                 <div className="fact">
                   <strong>
-                    Scheduled Time Out
+                    Regular Time Out
                   </strong>
                   <div>
                     {timeText(
-                      requestData.scheduledTimeOut,
+                      requestData.regularTimeOut,
                     )}
                   </div>
                 </div>
