@@ -191,7 +191,6 @@ export async function sendLeaveApprovalCardEnhanced(
         tag: "plain_text",
         content: input.attachmentName || "Leave attachment",
       },
-      mode: "fit_horizontal",
       compact_width: true,
       preview: true,
     });
