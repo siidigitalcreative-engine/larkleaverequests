@@ -830,7 +830,6 @@ export async function sendOvertimeApprovalCard(
                   input.attachmentName ||
                   "Overtime attachment",
               },
-              mode: "fit_horizontal",
               compact_width: true,
               preview: true,
             },
