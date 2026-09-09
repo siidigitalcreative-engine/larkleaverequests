@@ -593,6 +593,13 @@ export default function UndertimePage() {
                   </div>
                   <input
                     className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                     type="date"
                     value={undertimeDate}
                     onChange={(event) =>
@@ -618,6 +625,13 @@ export default function UndertimePage() {
                     </div>
                     <input
                       className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                       type="time"
                       value={requestedEarlyTimeOut}
                       onChange={(event) =>
@@ -642,6 +656,13 @@ export default function UndertimePage() {
                     </div>
                     <input
                       className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                       type="time"
                       value={regularTimeOut}
                       onChange={(event) =>
