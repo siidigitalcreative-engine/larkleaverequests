@@ -1563,6 +1563,13 @@ export default function Home() {
                       </div>
                       <input
                         className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                         type="date"
                         value={startDate}
                         onChange={(event) =>
@@ -1589,6 +1596,13 @@ export default function Home() {
                       </div>
                       <input
                         className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                         type="date"
                         value={endDate}
                         onChange={(event) =>
@@ -1635,6 +1649,13 @@ export default function Home() {
                         </div>
                         <input
                           className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                           type="time"
                           value={startTime}
                           onChange={(event) =>
@@ -1658,6 +1679,13 @@ export default function Home() {
                         </div>
                         <input
                           className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                           type="time"
                           value={endTime}
                           onChange={(event) =>
@@ -1849,6 +1877,13 @@ export default function Home() {
                       </div>
                       <input
                         className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                         type="date"
                         value={currentOffDate}
                         onChange={(event) =>
@@ -1875,6 +1910,13 @@ export default function Home() {
                       </div>
                       <input
                         className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                         type="date"
                         value={requestedNewOffDate}
                         onChange={(event) =>
