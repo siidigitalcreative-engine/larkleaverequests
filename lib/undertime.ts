@@ -883,6 +883,7 @@ export async function sendUndertimeApprovalCard(
           "Undertime attachment",
       },
       mode: "fit_horizontal",
+      compact_width: true,
       preview: true,
     });
   }
