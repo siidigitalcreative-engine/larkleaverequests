@@ -831,6 +831,7 @@ export async function sendOvertimeApprovalCard(
                   "Overtime attachment",
               },
               mode: "fit_horizontal",
+              compact_width: true,
               preview: true,
             },
           ]
