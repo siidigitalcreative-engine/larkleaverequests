@@ -494,21 +494,86 @@ export default function Home() {
           padding: 0 !important;
         }
 
+        /* Keep every form control inside the card, including iOS/Lark WebView
+           native date/time/file controls. */
+        .card,
+        .card form,
+        .card .grid,
+        .card .field {
+          min-width: 0 !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+        .card .input,
+        .card .select,
+        .card .textarea,
+        .card .dateInputShell,
+        .card .dateNativeInput,
+        .card input[type="date"],
+        .card input[type="time"],
+        .card input[type="file"] {
+          width: 100% !important;
+          max-width: 100% !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+        }
+
         @media (max-width: 640px) {
-          .grid {
-            grid-template-columns: minmax(0, 1fr) !important;
-            width: 100% !important;
+          .card {
+            overflow: hidden !important;
           }
 
+          .card form {
+            width: 100% !important;
+            overflow: hidden !important;
+          }
+
+          .grid {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+          }
+
+          .grid > .field,
           .field {
             min-width: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
+            box-sizing: border-box !important;
           }
 
-          .dateInputShell {
+          .input,
+          .select,
+          .textarea,
+          .dateInputShell,
+          .dateNativeInput,
+          input[type="date"],
+          input[type="time"],
+          input[type="file"] {
+            display: block !important;
             width: 100% !important;
             max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+          }
+
+          input[type="date"]::-webkit-date-and-time-value,
+          input[type="time"]::-webkit-date-and-time-value {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            width: auto !important;
+            overflow: hidden !important;
+          }
+
+          input[type="date"]::-webkit-datetime-edit,
+          input[type="time"]::-webkit-datetime-edit {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            overflow: hidden !important;
           }
         }
       `}</style>
