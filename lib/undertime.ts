@@ -882,7 +882,6 @@ export async function sendUndertimeApprovalCard(
           input.attachmentName ||
           "Undertime attachment",
       },
-      mode: "fit_horizontal",
       compact_width: true,
       preview: true,
     });
