@@ -31,6 +31,38 @@ function calculateDuration(
   return Math.round(((end - start) / 60) * 100) / 100;
 }
 
+
+function pickerDateText(value: string) {
+  if (!value) return "Select date";
+
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+
+  return new Intl.DateTimeFormat("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+function pickerTimeText(value: string) {
+  if (!value) return "Select time";
+
+  const [hour, minute] = value.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return value;
+  }
+
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+
+  return new Intl.DateTimeFormat("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
+}
+
 export default function OvertimePage() {
   const [loading, setLoading] = useState(true);
   const [employee, setEmployee] =
@@ -262,7 +294,8 @@ export default function OvertimePage() {
   return (
     <>
       <style jsx global>{`
-        .overtimeDateShell {
+        .pickerShell {
+          position: relative;
           width: 100%;
           max-width: 100%;
           min-width: 0;
@@ -274,20 +307,76 @@ export default function OvertimePage() {
           overflow: hidden;
         }
 
-        .overtimeDateInput {
+        .pickerDisplay {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          padding: 0 14px;
+          color: #101828;
+          font-size: 16px;
+          line-height: 1.2;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          pointer-events: none;
+        }
+
+        .pickerDisplay.placeholder {
+          color: #98a2b3;
+        }
+
+        .pickerNativeInput {
+          position: absolute !important;
+          inset: 0 !important;
           display: block !important;
           width: 100% !important;
-          max-width: 100% !important;
-          min-width: 0 !important;
           height: 100% !important;
-          min-height: 48px !important;
-          box-sizing: border-box !important;
-          border: 0 !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
           margin: 0 !important;
-          padding: 0 14px !important;
-          background: transparent !important;
-          color: #101828 !important;
-          font-size: 16px !important;
+          padding: 0 !important;
+          border: 0 !important;
+          opacity: 0 !important;
+          cursor: pointer !important;
+          box-sizing: border-box !important;
+          appearance: none !important;
+          -webkit-appearance: none !important;
+        }
+
+        .card,
+        .card form,
+        .card .grid,
+        .card .field {
+          min-width: 0 !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+        @media (max-width: 640px) {
+          .card {
+            overflow: hidden !important;
+          }
+
+          .card form,
+          .grid,
+          .field,
+          .pickerShell,
+          .input,
+          .select,
+          .textarea,
+          input[type="file"] {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            box-sizing: border-box !important;
+          }
+
+          .grid {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
         }
       `}</style>
 
@@ -349,14 +438,20 @@ export default function OvertimePage() {
                 <span className="label">
                   Overtime Date *
                 </span>
-                <div className="overtimeDateShell">
+                <div className="pickerShell">
+                  <div
+                    className={`pickerDisplay ${overtimeDate ? "" : "placeholder"}`}
+                  >
+                    {pickerDateText(overtimeDate)}
+                  </div>
                   <input
-                    className="overtimeDateInput"
+                    className="pickerNativeInput"
                     type="date"
                     value={overtimeDate}
                     onChange={(event) =>
                       setOvertimeDate(event.target.value)
                     }
+                    aria-label="Overtime Date"
                     required
                   />
                 </div>
@@ -367,30 +462,46 @@ export default function OvertimePage() {
                   <span className="label">
                     Start Time *
                   </span>
-                  <input
-                    className="input"
-                    type="time"
-                    value={startTime}
-                    onChange={(event) =>
-                      setStartTime(event.target.value)
-                    }
-                    required
-                  />
+                  <div className="pickerShell">
+                    <div
+                      className={`pickerDisplay ${startTime ? "" : "placeholder"}`}
+                    >
+                      {pickerTimeText(startTime)}
+                    </div>
+                    <input
+                      className="pickerNativeInput"
+                      type="time"
+                      value={startTime}
+                      onChange={(event) =>
+                        setStartTime(event.target.value)
+                      }
+                      aria-label="Start Time"
+                      required
+                    />
+                  </div>
                 </label>
 
                 <label className="field">
                   <span className="label">
                     End Time *
                   </span>
-                  <input
-                    className="input"
-                    type="time"
-                    value={endTime}
-                    onChange={(event) =>
-                      setEndTime(event.target.value)
-                    }
-                    required
-                  />
+                  <div className="pickerShell">
+                    <div
+                      className={`pickerDisplay ${endTime ? "" : "placeholder"}`}
+                    >
+                      {pickerTimeText(endTime)}
+                    </div>
+                    <input
+                      className="pickerNativeInput"
+                      type="time"
+                      value={endTime}
+                      onChange={(event) =>
+                        setEndTime(event.target.value)
+                      }
+                      aria-label="End Time"
+                      required
+                    />
+                  </div>
                 </label>
               </div>
 
