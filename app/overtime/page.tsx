@@ -446,6 +446,13 @@ export default function OvertimePage() {
                   </div>
                   <input
                     className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                     type="date"
                     value={overtimeDate}
                     onChange={(event) =>
@@ -470,6 +477,13 @@ export default function OvertimePage() {
                     </div>
                     <input
                       className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                       type="time"
                       value={startTime}
                       onChange={(event) =>
@@ -493,6 +507,13 @@ export default function OvertimePage() {
                     </div>
                     <input
                       className="pickerNativeInput"
+                        onClick={(event) => {
+                          try {
+                            event.currentTarget.showPicker?.();
+                          } catch {
+                            // Fallback to normal native picker behavior.
+                          }
+                        }}
                       type="time"
                       value={endTime}
                       onChange={(event) =>
