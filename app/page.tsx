@@ -166,6 +166,16 @@ export default function Home() {
     useState<HistoryFilter>("All");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [historyCommentTarget, setHistoryCommentTarget] = useState("");
+  const [historyCommentText, setHistoryCommentText] = useState("");
+  const [historyCommentAttachment, setHistoryCommentAttachment] =
+    useState<File | null>(null);
+  const [historyComments, setHistoryComments] = useState("");
+  const [historyCommentLoading, setHistoryCommentLoading] =
+    useState(false);
+  const [historyCommentBusy, setHistoryCommentBusy] = useState(false);
+  const [historyCommentStatus, setHistoryCommentStatus] = useState("");
+  const [historyCommentFileKey, setHistoryCommentFileKey] = useState(0);
 
   const week = useMemo(() => currentWeekBounds(), []);
 
@@ -278,6 +288,124 @@ export default function Home() {
     }
   }
 
+  function historyItemKey(item: ApprovalHistoryItem) {
+    return `${item.requestType}::${item.requestId}`;
+  }
+
+  async function openHistoryComment(item: ApprovalHistoryItem) {
+    const key = historyItemKey(item);
+
+    if (historyCommentTarget === key) {
+      setHistoryCommentTarget("");
+      setHistoryCommentText("");
+      setHistoryCommentAttachment(null);
+      setHistoryComments("");
+      setHistoryCommentStatus("");
+      setHistoryCommentFileKey((value) => value + 1);
+      return;
+    }
+
+    setHistoryCommentTarget(key);
+    setHistoryCommentText("");
+    setHistoryCommentAttachment(null);
+    setHistoryComments("");
+    setHistoryCommentStatus("");
+    setHistoryCommentLoading(true);
+    setHistoryCommentFileKey((value) => value + 1);
+
+    try {
+      const params = new URLSearchParams({
+        requestType: item.requestType,
+        requestId: item.requestId,
+      });
+
+      const response = await fetch(
+        `/api/approval-history/comment?${params.toString()}`,
+        { cache: "no-store" },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load comments.");
+      }
+
+      setHistoryComments(
+        typeof data.comments === "string" ? data.comments : "",
+      );
+    } catch (error) {
+      setHistoryCommentStatus(
+        error instanceof Error ? error.message : "Unable to load comments.",
+      );
+    } finally {
+      setHistoryCommentLoading(false);
+    }
+  }
+
+  async function submitHistoryComment(
+    event: FormEvent,
+    item: ApprovalHistoryItem,
+  ) {
+    event.preventDefault();
+    setHistoryCommentBusy(true);
+    setHistoryCommentStatus("");
+
+    try {
+      if (!historyCommentText.trim() && !historyCommentAttachment) {
+        throw new Error(
+          "Enter a comment or attach a file before sending.",
+        );
+      }
+
+      const form = new FormData();
+      form.set("requestType", item.requestType);
+      form.set("requestId", item.requestId);
+      form.set("comment", historyCommentText.trim());
+
+      if (historyCommentAttachment) {
+        form.set("attachment", historyCommentAttachment);
+      }
+
+      const response = await fetch(
+        "/api/approval-history/comment",
+        {
+          method: "POST",
+          body: form,
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to send comment.");
+      }
+
+      setHistoryComments(
+        typeof data.comments === "string" ? data.comments : historyComments,
+      );
+      setHistoryCommentText("");
+      setHistoryCommentAttachment(null);
+      setHistoryCommentFileKey((value) => value + 1);
+
+      const warningText =
+        Array.isArray(data.warnings) && data.warnings.length > 0
+          ? ` Comment saved, but notification warning: ${data.warnings.join(
+              "; ",
+            )}`
+          : "";
+
+      setHistoryCommentStatus(
+        `Comment sent to the approval group.${warningText}`,
+      );
+    } catch (error) {
+      setHistoryCommentStatus(
+        error instanceof Error ? error.message : "Unable to send comment.",
+      );
+    } finally {
+      setHistoryCommentBusy(false);
+    }
+  }
+
   async function verify(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -327,6 +455,12 @@ export default function Home() {
     setHistoryItems([]);
     setHistoryFilter("All");
     setHistoryError("");
+    setHistoryCommentTarget("");
+    setHistoryCommentText("");
+    setHistoryCommentAttachment(null);
+    setHistoryComments("");
+    setHistoryCommentStatus("");
+    setHistoryCommentFileKey((value) => value + 1);
     setStatus("");
   }
 
@@ -1202,6 +1336,142 @@ export default function Home() {
                             {item.rejectionReason}
                           </div>
                         )}
+
+
+                      <div
+                        className="row"
+                        style={{
+                          marginTop: 12,
+                          justifyContent: "flex-start",
+                        }}
+                      >
+                        <button
+                          className="btn btnGhost"
+                          type="button"
+                          onClick={() => void openHistoryComment(item)}
+                        >
+                          {historyCommentTarget === historyItemKey(item)
+                            ? "Close Comments"
+                            : "Add Comment"}
+                        </button>
+                      </div>
+
+                      {historyCommentTarget === historyItemKey(item) && (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            padding: 14,
+                            border: "1px solid #eaecf0",
+                            borderRadius: 12,
+                            background: "#ffffff",
+                          }}
+                        >
+                          <div
+                            className="small"
+                            style={{
+                              fontWeight: 700,
+                              marginBottom: 8,
+                            }}
+                          >
+                            Comments
+                          </div>
+
+                          {historyCommentLoading ? (
+                            <div className="small">Loading comments…</div>
+                          ) : historyComments ? (
+                            <div
+                              className="small"
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                lineHeight: 1.55,
+                                padding: 12,
+                                borderRadius: 10,
+                                background: "#f8fafc",
+                                marginBottom: 12,
+                              }}
+                            >
+                              {historyComments}
+                            </div>
+                          ) : (
+                            <div
+                              className="small"
+                              style={{
+                                color: "#667085",
+                                marginBottom: 12,
+                              }}
+                            >
+                              No comments yet.
+                            </div>
+                          )}
+
+                          <form
+                            onSubmit={(event) =>
+                              void submitHistoryComment(event, item)
+                            }
+                          >
+                            <label className="field">
+                              <span className="label">Add Comment</span>
+                              <textarea
+                                className="textarea"
+                                value={historyCommentText}
+                                onChange={(event) =>
+                                  setHistoryCommentText(event.target.value)
+                                }
+                                placeholder="Write a comment..."
+                              />
+                            </label>
+
+                            <label className="field">
+                              <span className="label">Attachment</span>
+                              <input
+                                key={historyCommentFileKey}
+                                className="input"
+                                type="file"
+                                accept="image/*,.pdf"
+                                onChange={(event) =>
+                                  setHistoryCommentAttachment(
+                                    event.target.files?.[0] || null,
+                                  )
+                                }
+                              />
+                              <div
+                                className="small"
+                                style={{ marginTop: 5 }}
+                              >
+                                Optional. Image or PDF, maximum 10 MB.
+                              </div>
+                            </label>
+
+                            <button
+                              className="btn btnPrimary"
+                              type="submit"
+                              disabled={
+                                historyCommentBusy ||
+                                (!historyCommentText.trim() &&
+                                  !historyCommentAttachment)
+                              }
+                              style={{ width: "100%" }}
+                            >
+                              {historyCommentBusy
+                                ? "Sending…"
+                                : "Send Comment"}
+                            </button>
+                          </form>
+
+                          {historyCommentStatus && (
+                            <div
+                              className={`status ${
+                                historyCommentStatus.startsWith("Comment sent")
+                                  ? "success"
+                                  : "error"
+                              }`}
+                              style={{ marginTop: 10 }}
+                            >
+                              {historyCommentStatus}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
