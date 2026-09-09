@@ -522,7 +522,6 @@ export async function sendChangeOffApprovalCardEnhanced(
           input.attachmentName ||
           "Change Day-Off attachment",
       },
-      mode: "fit_horizontal",
       compact_width: true,
       preview: true,
     });
