@@ -410,7 +410,7 @@ export async function addHistoryComment(input: {
 
     if (input.attachment.type.toLowerCase().startsWith("image/")) {
       try {
-        attachmentImageKey = await uploadApprovalCardImage(input.attachment);
+        attachmentImageKey = (await uploadApprovalCardImage(input.attachment)) || "";
       } catch (error) {
         console.error("Comment card image upload failed:", error);
       }
