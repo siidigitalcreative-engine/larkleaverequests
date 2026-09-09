@@ -523,6 +523,7 @@ export async function sendChangeOffApprovalCardEnhanced(
           "Change Day-Off attachment",
       },
       mode: "fit_horizontal",
+      compact_width: true,
       preview: true,
     });
   }
