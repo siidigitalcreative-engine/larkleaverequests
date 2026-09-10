@@ -16,6 +16,7 @@ import {
   verifySessionToken,
 } from "@/lib/session";
 import { makeReviewToken } from "@/lib/reviewToken";
+import { sendCentralRequestNotification } from "@/lib/request-notifications";
 
 export const runtime = "nodejs";
 
@@ -177,6 +178,34 @@ export async function POST(request: Request) {
         error instanceof Error
           ? error.message
           : "Unable to send approval-group card.",
+      );
+    }
+
+    // Submission-only copy for the centralized Office/Warehouse notifications group.
+    try {
+      await sendCentralRequestNotification({
+        requestType: "Overtime",
+        employeeId: input.employeeId,
+        employeeName: input.employeeName,
+        department: input.department,
+        approvalGroup: input.approvalGroup,
+        submittedAt: input.submittedAt,
+        requestId: created.requestId,
+        overtimeDate: input.overtimeDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        durationHours: created.durationHours,
+        publicHoliday: input.publicHoliday,
+        compensationMethod: input.compensationMethod,
+        reason: input.reason,
+        attachmentImageKey,
+        attachmentName,
+      });
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to send centralized request notification.",
       );
     }
 
