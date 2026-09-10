@@ -385,7 +385,6 @@ export async function sendCentralRequestNotification(
           `**${input.employeeName}**\n` +
           `Employee ID: ${input.employeeId}\n` +
           `Department: ${input.department || "—"}\n` +
-          `Attendance Group: ${groups.join(", ") || "—"}\n` +
           `Approval Group: ${input.approvalGroup}\n` +
           (monthlyLeaveCount !== null
             ? `**Leave Filed This Month: ${monthlyLeaveCount}**\n`
@@ -463,7 +462,7 @@ export async function sendCentralRequestNotification(
           template: "blue",
           title: {
             tag: "plain_text",
-            content: `New ${input.requestType} Request`,
+            content: `${input.employeeName} — ${input.requestType} Request`,
           },
         },
         elements,
