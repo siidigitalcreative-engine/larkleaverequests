@@ -10,6 +10,7 @@ import {
 } from "@/lib/lark";
 import { uploadApprovalCardImage } from "@/lib/approval-attachments";
 import { sendLeaveApprovalCardEnhanced } from "@/lib/approval-cards";
+import { sendCentralRequestNotification } from "@/lib/request-notifications";
 import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
@@ -187,6 +188,35 @@ export async function POST(request: Request) {
         error instanceof Error
           ? error.message
           : "Unable to send approval-group webhook.",
+      );
+    }
+
+    // Submission-only copy for the centralized Office/Warehouse notifications group.
+    // No approval/rejection actions and no later status updates are sent here.
+    try {
+      await sendCentralRequestNotification({
+        requestType: "Leave",
+        employeeId: input.employeeId,
+        employeeName: input.employeeName,
+        department: input.department,
+        approvalGroup: input.approvalGroup,
+        submittedAt: input.submittedAt,
+        requestId: created.requestId,
+        leaveType: input.leaveType,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dayType: input.dayType,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        reason: input.reason,
+        attachmentImageKey,
+        attachmentName,
+      });
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to send centralized request notification.",
       );
     }
 
