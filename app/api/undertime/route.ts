@@ -6,23 +6,29 @@ import {
   uploadLeaveAttachment,
 } from "@/lib/lark";
 import {
-  createUndertimeApprovalGroupRecord,
-  createUndertimeRequest,
-  sendUndertimeApprovalCard,
-} from "@/lib/undertime";
+  createOvertimeApprovalGroupRecord,
+  createOvertimeRequest,
+  sendOvertimeApprovalCard,
+} from "@/lib/overtime";
 import { uploadApprovalCardImage } from "@/lib/approval-attachments";
 import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
 } from "@/lib/session";
 import { makeReviewToken } from "@/lib/reviewToken";
+import { sendCentralRequestNotification } from "@/lib/request-notifications";
 
 export const runtime = "nodejs";
 
 const schema = z.object({
-  undertimeDate: z.string().min(10).max(10),
-  requestedEarlyTimeOut: z.string().min(4).max(8),
-  regularTimeOut: z.string().min(4).max(8),
+  overtimeDate: z.string().min(10).max(10),
+  startTime: z.string().min(4).max(8),
+  endTime: z.string().min(4).max(8),
+  publicHoliday: z.enum(["Yes", "No"]),
+  compensationMethod: z.enum([
+    "Apply for days off",
+    "Apply for overtimes payment",
+  ]),
   reason: z.string().min(3).max(2000),
 });
 
@@ -42,14 +48,16 @@ export async function POST(request: Request) {
     const form = await request.formData();
 
     const body = schema.parse({
-      undertimeDate: String(
-        form.get("undertimeDate") ?? "",
+      overtimeDate: String(
+        form.get("overtimeDate") ?? "",
       ),
-      requestedEarlyTimeOut: String(
-        form.get("requestedEarlyTimeOut") ?? "",
+      startTime: String(form.get("startTime") ?? ""),
+      endTime: String(form.get("endTime") ?? ""),
+      publicHoliday: String(
+        form.get("publicHoliday") ?? "",
       ),
-      regularTimeOut: String(
-        form.get("regularTimeOut") ?? "",
+      compensationMethod: String(
+        form.get("compensationMethod") ?? "",
       ),
       reason: String(form.get("reason") ?? ""),
     });
@@ -77,23 +85,19 @@ export async function POST(request: Request) {
 
     const attachment = form.get("attachment");
 
-    if (
-      attachment instanceof File &&
-      attachment.size > 0
-    ) {
+    if (attachment instanceof File && attachment.size > 0) {
       if (attachment.size > 10 * 1024 * 1024) {
         return NextResponse.json(
           {
             error:
-              "Undertime attachment must be 10 MB or smaller.",
+              "Overtime attachment must be 10 MB or smaller.",
           },
           { status: 400 },
         );
       }
 
       attachmentName =
-        attachment.name ||
-        "Undertime attachment";
+        attachment.name || "Overtime attachment";
 
       attachmentToken =
         await uploadLeaveAttachment(attachment);
@@ -105,12 +109,10 @@ export async function POST(request: Request) {
       ) {
         try {
           attachmentImageKey =
-            await uploadApprovalCardImage(
-              attachment,
-            );
+            await uploadApprovalCardImage(attachment);
         } catch (error) {
           console.error(
-            "Undertime card image upload failed:",
+            "Overtime card image upload failed:",
             error,
           );
         }
@@ -120,20 +122,16 @@ export async function POST(request: Request) {
     const submittedAt = Date.now();
 
     const input = {
-      employeeId:
-        currentEmployee.employeeId,
-      employeeName:
-        currentEmployee.employeeName,
-      department:
-        currentEmployee.department,
+      employeeId: currentEmployee.employeeId,
+      employeeName: currentEmployee.employeeName,
+      department: currentEmployee.department,
       approvalGroup:
         currentEmployee.leaveApprovalGroup,
-      undertimeDate:
-        body.undertimeDate,
-      requestedEarlyTimeOut:
-        body.requestedEarlyTimeOut,
-      regularTimeOut:
-        body.regularTimeOut,
+      overtimeDate: body.overtimeDate,
+      startTime: body.startTime,
+      endTime: body.endTime,
+      publicHoliday: body.publicHoliday,
+      compensationMethod: body.compensationMethod,
       reason: body.reason,
       submittedAt,
       attachmentToken,
@@ -141,34 +139,24 @@ export async function POST(request: Request) {
       attachmentName,
     } as const;
 
-    const created =
-      await createUndertimeRequest(
-        input,
-      );
+    const created = await createOvertimeRequest(input);
 
-    const reviewToken =
-      makeReviewToken(
-        `undertime:${created.recordId}`,
-      );
+    const reviewToken = makeReviewToken(
+      `overtime:${created.recordId}`,
+    );
 
     const routingWarnings: string[] = [];
 
     try {
       const approvalRecord =
-        await createUndertimeApprovalGroupRecord(
-          {
-            ...input,
-            mainRecordId:
-              created.recordId,
-            requestId:
-              created.requestId,
-          },
-        );
+        await createOvertimeApprovalGroupRecord({
+          ...input,
+          mainRecordId: created.recordId,
+          requestId: created.requestId,
+        });
 
       if (!approvalRecord.created) {
-        routingWarnings.push(
-          approvalRecord.reason,
-        );
+        routingWarnings.push(approvalRecord.reason);
       }
     } catch (error) {
       routingWarnings.push(
@@ -179,16 +167,12 @@ export async function POST(request: Request) {
     }
 
     try {
-      await sendUndertimeApprovalCard(
-        {
-          ...input,
-          recordId:
-            created.recordId,
-          requestId:
-            created.requestId,
-          reviewToken,
-        },
-      );
+      await sendOvertimeApprovalCard({
+        ...input,
+        recordId: created.recordId,
+        requestId: created.requestId,
+        reviewToken,
+      });
     } catch (error) {
       routingWarnings.push(
         error instanceof Error
@@ -197,28 +181,50 @@ export async function POST(request: Request) {
       );
     }
 
+    // Submission-only copy for the centralized Office/Warehouse notifications group.
+    try {
+      await sendCentralRequestNotification({
+        requestType: "Overtime",
+        employeeId: input.employeeId,
+        employeeName: input.employeeName,
+        department: input.department,
+        approvalGroup: input.approvalGroup,
+        submittedAt: input.submittedAt,
+        requestId: created.requestId,
+        overtimeDate: input.overtimeDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        durationHours: created.durationHours,
+        publicHoliday: input.publicHoliday,
+        compensationMethod: input.compensationMethod,
+        reason: input.reason,
+        attachmentImageKey,
+        attachmentName,
+      });
+    } catch (error) {
+      routingWarnings.push(
+        error instanceof Error
+          ? error.message
+          : "Unable to send centralized request notification.",
+      );
+    }
+
     return NextResponse.json({
       ok: true,
-      requestId:
-        created.requestId,
-      durationHours:
-        created.durationHours,
-      approvalGroup:
-        input.approvalGroup,
+      requestId: created.requestId,
+      durationHours: created.durationHours,
+      approvalGroup: input.approvalGroup,
       routingWarnings,
     });
   } catch (error) {
-    console.error(
-      "Undertime request failed:",
-      error,
-    );
+    console.error("Overtime request failed:", error);
 
     return NextResponse.json(
       {
         error:
           error instanceof Error
             ? error.message
-            : "Unable to submit Undertime request.",
+            : "Unable to submit Overtime request.",
       },
       { status: 500 },
     );
