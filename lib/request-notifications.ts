@@ -165,8 +165,8 @@ async function employeeAttendanceGroups(employeeId: string) {
   return [];
 }
 
-function shouldSend(groups: string[]) {
-  return groups.some((group) => {
+function shouldSend(groups: string[], approvalGroup: string) {
+  const attendanceMatch = groups.some((group) => {
     const normalized = group.trim().toLowerCase();
     return (
       normalized === "office" ||
@@ -175,6 +175,30 @@ function shouldSend(groups: string[]) {
       normalized.includes("warehouse")
     );
   });
+
+  if (attendanceMatch) return true;
+
+  // Fallback for Employees tables where Attendance Group is a linked/lookup
+  // field and Lark returns record IDs instead of the visible option text.
+  // These are the current Office approval groups, plus Warehouse.
+  const allowedApprovalGroups = new Set([
+    "digital creative",
+    "sales",
+    "finance",
+    "e-commerce",
+    "ecommerce",
+    "logistics",
+    "marketing",
+    "hr",
+    "creative",
+    "hod",
+    "purchasing",
+    "warehouse",
+  ]);
+
+  return allowedApprovalGroups.has(
+    approvalGroup.trim().toLowerCase(),
+  );
 }
 
 function dateText(date: string) {
@@ -265,8 +289,12 @@ export async function sendCentralRequestNotification(
 ) {
   const groups = await employeeAttendanceGroups(input.employeeId);
 
-  if (!shouldSend(groups)) {
-    return { sent: false as const, reason: "Employee is not Office or Warehouse." };
+  if (!shouldSend(groups, input.approvalGroup)) {
+    return {
+      sent: false as const,
+      reason:
+        "Employee is not in an Office/Warehouse attendance or approval group.",
+    };
   }
 
   const elements: any[] = [
