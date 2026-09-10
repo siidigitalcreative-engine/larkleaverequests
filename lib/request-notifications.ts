@@ -125,6 +125,77 @@ function attendanceGroups(value: unknown): string[] {
   return Array.from(new Set(results));
 }
 
+
+async function leaveFiledThisMonth(employeeId: string, submittedAt: number) {
+  const tableId = process.env.LARK_LEAVE_TABLE_ID;
+  if (!tableId) {
+    throw new Error("Missing LARK_LEAVE_TABLE_ID");
+  }
+
+  const token = await getTenantAccessToken();
+  const appToken = baseAppToken();
+
+  const submittedDate = new Date(submittedAt);
+
+  const monthText = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+  }).format(submittedDate);
+
+  let pageToken = "";
+  let count = 0;
+
+  do {
+    const url = new URL(
+      `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
+    );
+    url.searchParams.set("page_size", "500");
+    if (pageToken) url.searchParams.set("page_token", pageToken);
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const data = await response.json();
+
+    if (!response.ok || data.code !== 0) {
+      throw new Error(
+        `Unable to count monthly leave requests: ${data.msg || response.statusText}`,
+      );
+    }
+
+    for (const item of data.data?.items ?? []) {
+      const fields = item?.fields ?? {};
+
+      if (text(fields["Employee ID"]) !== employeeId) {
+        continue;
+      }
+
+      const submittedValue = Number(fields["Submitted At"] ?? 0);
+      if (!submittedValue) {
+        continue;
+      }
+
+      const recordMonth = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+      }).format(new Date(submittedValue));
+
+      if (recordMonth === monthText) {
+        count += 1;
+      }
+    }
+
+    pageToken = data.data?.has_more
+      ? text(data.data?.page_token)
+      : "";
+  } while (pageToken);
+
+  return count;
+}
+
 async function employeeAttendanceGroups(employeeId: string) {
   const token = await getTenantAccessToken();
   const appToken = baseAppToken();
@@ -297,6 +368,14 @@ export async function sendCentralRequestNotification(
     };
   }
 
+  const monthlyLeaveCount =
+    input.requestType === "Leave"
+      ? await leaveFiledThisMonth(
+          input.employeeId,
+          input.submittedAt,
+        )
+      : null;
+
   const elements: any[] = [
     {
       tag: "div",
@@ -308,6 +387,9 @@ export async function sendCentralRequestNotification(
           `Department: ${input.department || "—"}\n` +
           `Attendance Group: ${groups.join(", ") || "—"}\n` +
           `Approval Group: ${input.approvalGroup}\n` +
+          (monthlyLeaveCount !== null
+            ? `**Leave Filed This Month: ${monthlyLeaveCount}**\n`
+            : "") +
           `**Date Filed: ${filedText(input.submittedAt)}**`,
       },
     },
