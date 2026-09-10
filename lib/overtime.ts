@@ -1,4 +1,5 @@
 import { getTenantAccessToken } from "@/lib/lark";
+import { getMonthlyRequestCounts, monthlyRequestCountLines } from "@/lib/monthly-request-counts";
 
 export type OvertimeInput = {
   employeeId: string;
@@ -704,6 +705,7 @@ function timeText(timestamp: number) {
   }).format(new Date(timestamp));
 }
 
+
 export async function sendOvertimeApprovalCard(
   input: OvertimeInput & {
     recordId: string;
@@ -728,6 +730,14 @@ export async function sendOvertimeApprovalCard(
     input.endTime,
   );
 
+  const monthlyCounts =
+    await getMonthlyRequestCounts(
+      input.employeeId,
+      input.submittedAt,
+    );
+  const monthlyCountLines =
+    monthlyRequestCountLines(monthlyCounts);
+
   const card = {
     config: {
       wide_screen_mode: true,
@@ -750,6 +760,9 @@ export async function sendOvertimeApprovalCard(
             `Employee ID: ${input.employeeId}\n` +
             `Department: ${input.department || "—"}\n` +
             `Approval Group: ${input.approvalGroup}\n` +
+            (monthlyCountLines
+              ? `${monthlyCountLines}\n`
+              : "") +
             `**Date Filed: ${new Intl.DateTimeFormat("en-PH", {
               timeZone: "Asia/Manila",
               month: "short",
