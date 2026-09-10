@@ -1,4 +1,5 @@
 import { getTenantAccessToken } from "@/lib/lark";
+import { getMonthlyRequestCounts, monthlyRequestCountLines } from "@/lib/monthly-request-counts";
 
 type ChangeOffEnhancedInput = {
   employeeId: string;
@@ -427,6 +428,7 @@ function filedText(value: number) {
   }).format(new Date(value));
 }
 
+
 export async function sendChangeOffApprovalCardEnhanced(
   input: ChangeOffEnhancedInput & {
     recordId: string;
@@ -451,6 +453,14 @@ export async function sendChangeOffApprovalCardEnhanced(
     `?token=${encodeURIComponent(input.reviewToken)}` +
     `&decision=reject`;
 
+  const monthlyCounts =
+    await getMonthlyRequestCounts(
+      input.employeeId,
+      input.submittedAt,
+    );
+  const monthlyCountLines =
+    monthlyRequestCountLines(monthlyCounts);
+
   const elements: any[] = [
     {
       tag: "div",
@@ -461,6 +471,9 @@ export async function sendChangeOffApprovalCardEnhanced(
           `Employee ID: ${input.employeeId}\n` +
           `Department: ${input.department || "—"}\n` +
           `Approval Group: ${input.approvalGroup}\n` +
+          (monthlyCountLines
+            ? `${monthlyCountLines}\n`
+            : "") +
           `**Date Filed: ${filedText(input.submittedAt)}**`,
       },
     },
