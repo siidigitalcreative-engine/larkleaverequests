@@ -68,10 +68,16 @@ function employeesTableId() {
 }
 
 function webhook() {
-  const value = process.env.LARK_REQUEST_NOTIFICATION_WEBHOOK;
+  const value =
+    process.env.LARK_REQUEST_NOTIFICATION_WEBHOOK ||
+    process.env.LARK_REQUEST_FEED_WEBHOOK;
+
   if (!value) {
-    throw new Error("Missing LARK_REQUEST_NOTIFICATION_WEBHOOK");
+    throw new Error(
+      "Missing LARK_REQUEST_NOTIFICATION_WEBHOOK (or legacy LARK_REQUEST_FEED_WEBHOOK)",
+    );
   }
+
   return value;
 }
 
@@ -80,26 +86,43 @@ function text(value: unknown) {
 }
 
 function attendanceGroups(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => {
-        if (typeof item === "string") return item.trim();
-        if (item && typeof item === "object") {
-          const obj = item as any;
-          return text(obj.name ?? obj.text ?? obj.value);
-        }
-        return "";
-      })
-      .filter(Boolean);
+  const results: string[] = [];
+
+  function collect(item: unknown) {
+    if (item === null || item === undefined) return;
+
+    if (typeof item === "string") {
+      const cleaned = item.trim();
+      if (cleaned) {
+        cleaned
+          .split(/[,;/|]+/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .forEach((part) => results.push(part));
+      }
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      item.forEach(collect);
+      return;
+    }
+
+    if (typeof item === "object") {
+      const obj = item as any;
+      collect(
+        obj.name ??
+          obj.text ??
+          obj.value ??
+          obj.label ??
+          obj.option_name ??
+          obj.optionName,
+      );
+    }
   }
 
-  const raw = text(value);
-  if (!raw) return [];
-
-  return raw
-    .split(/[,;/|]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  collect(value);
+  return Array.from(new Set(results));
 }
 
 async function employeeAttendanceGroups(employeeId: string) {
@@ -144,8 +167,13 @@ async function employeeAttendanceGroups(employeeId: string) {
 
 function shouldSend(groups: string[]) {
   return groups.some((group) => {
-    const normalized = group.toLowerCase();
-    return normalized === "office" || normalized === "warehouse";
+    const normalized = group.trim().toLowerCase();
+    return (
+      normalized === "office" ||
+      normalized === "warehouse" ||
+      normalized.includes("office") ||
+      normalized.includes("warehouse")
+    );
   });
 }
 
@@ -190,14 +218,14 @@ function timeText(time?: string) {
 function detailText(input: CentralRequestNotificationInput) {
   if (input.requestType === "Leave") {
     const lines = [
-      `**Leave Type**\\n${input.leaveType}`,
-      `**Day Type**\\n${input.dayType}`,
-      `**Start**\\n${dateText(input.startDate)}${
+      `**Leave Type**\n${input.leaveType}`,
+      `**Day Type**\n${input.dayType}`,
+      `**Start**\n${dateText(input.startDate)}${
         input.dayType === "Partial Day" && input.startTime
           ? ` ${timeText(input.startTime)}`
           : ""
       }`,
-      `**End**\\n${dateText(input.endDate)}${
+      `**End**\n${dateText(input.endDate)}${
         input.dayType === "Partial Day" && input.endTime
           ? ` ${timeText(input.endTime)}`
           : ""
@@ -208,27 +236,27 @@ function detailText(input: CentralRequestNotificationInput) {
 
   if (input.requestType === "Change Day-Off") {
     return [
-      `**Current Off-Date**\\n${dateText(input.currentOffDate)}`,
-      `**Requested New Off-Date**\\n${dateText(input.requestedNewOffDate)}`,
+      `**Current Off-Date**\n${dateText(input.currentOffDate)}`,
+      `**Requested New Off-Date**\n${dateText(input.requestedNewOffDate)}`,
     ];
   }
 
   if (input.requestType === "Overtime") {
     return [
-      `**Overtime Date**\\n${dateText(input.overtimeDate)}`,
-      `**Start Time**\\n${timeText(input.startTime)}`,
-      `**End Time**\\n${timeText(input.endTime)}`,
-      `**Duration**\\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
-      `**Public Holiday?**\\n${input.publicHoliday}`,
-      `**Compensation Method**\\n${input.compensationMethod}`,
+      `**Overtime Date**\n${dateText(input.overtimeDate)}`,
+      `**Start Time**\n${timeText(input.startTime)}`,
+      `**End Time**\n${timeText(input.endTime)}`,
+      `**Duration**\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
+      `**Public Holiday?**\n${input.publicHoliday}`,
+      `**Compensation Method**\n${input.compensationMethod}`,
     ];
   }
 
   return [
-    `**Undertime Date**\\n${dateText(input.undertimeDate)}`,
-    `**Requested Early Time Out**\\n${timeText(input.requestedEarlyTimeOut)}`,
-    `**Regular Time Out**\\n${timeText(input.regularTimeOut)}`,
-    `**Duration**\\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
+    `**Undertime Date**\n${dateText(input.undertimeDate)}`,
+    `**Requested Early Time Out**\n${timeText(input.requestedEarlyTimeOut)}`,
+    `**Regular Time Out**\n${timeText(input.regularTimeOut)}`,
+    `**Duration**\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
   ];
 }
 
@@ -247,11 +275,11 @@ export async function sendCentralRequestNotification(
       text: {
         tag: "lark_md",
         content:
-          `**${input.employeeName}**\\n` +
-          `Employee ID: ${input.employeeId}\\n` +
-          `Department: ${input.department || "—"}\\n` +
-          `Attendance Group: ${groups.join(", ") || "—"}\\n` +
-          `Approval Group: ${input.approvalGroup}\\n` +
+          `**${input.employeeName}**\n` +
+          `Employee ID: ${input.employeeId}\n` +
+          `Department: ${input.department || "—"}\n` +
+          `Attendance Group: ${groups.join(", ") || "—"}\n` +
+          `Approval Group: ${input.approvalGroup}\n` +
           `**Date Filed: ${filedText(input.submittedAt)}**`,
       },
     },
@@ -267,7 +295,7 @@ export async function sendCentralRequestNotification(
       tag: "div",
       text: {
         tag: "lark_md",
-        content: `**Reason**\\n${input.reason}`,
+        content: `**Reason**\n${input.reason}`,
       },
     },
   ];
@@ -296,7 +324,7 @@ export async function sendCentralRequestNotification(
       tag: "div",
       text: {
         tag: "lark_md",
-        content: `**Attachment**\\n${input.attachmentName}`,
+        content: `**Attachment**\n${input.attachmentName}`,
       },
     });
   }
