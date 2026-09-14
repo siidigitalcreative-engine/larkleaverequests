@@ -722,6 +722,7 @@ export type ApprovalHistoryItem = {
   currentOffDate?: number;
   requestedNewOffDate?: number;
   rejectionReason?: string;
+  approvalComment?: string;
 };
 
 export async function listEmployeeApprovalHistory(
@@ -766,6 +767,8 @@ export async function listEmployeeApprovalHistory(
         endDate: Number(f["End Date"] ?? 0) || undefined,
         rejectionReason:
           String(f["Rejection Reason"] ?? "").trim() || undefined,
+        approvalComment:
+          String(f["Approval Comment"] ?? "").trim() || undefined,
       });
     }
   }
@@ -802,6 +805,8 @@ export async function listEmployeeApprovalHistory(
             Number(f["Requested New Off-Date"] ?? 0) || undefined,
           rejectionReason:
             String(f["Rejection Reason"] ?? "").trim() || undefined,
+          approvalComment:
+            String(f["Approval Comment"] ?? "").trim() || undefined,
         });
       }
     } catch (error) {
