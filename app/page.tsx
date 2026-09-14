@@ -34,6 +34,7 @@ type ApprovalHistoryItem = {
   overtimeDate?: number;
   undertimeDate?: number;
   rejectionReason?: string;
+  approvalComment?: string;
 };
 
 type HistoryFilter = "All" | "Pending" | "Approved" | "Rejected";
@@ -274,9 +275,41 @@ export default function Home() {
         );
       }
 
-      setHistoryItems(
-        Array.isArray(data.items) ? data.items : [],
+      const items: ApprovalHistoryItem[] = Array.isArray(data.items)
+        ? data.items
+        : [];
+
+      // Load the existing approval-history comment for each request so an
+      // approval/rejection comment can be shown directly on the history card.
+      const itemsWithComments = await Promise.all(
+        items.map(async (item) => {
+          try {
+            const params = new URLSearchParams({
+              requestType: item.requestType,
+              requestId: item.requestId,
+            });
+            const commentResponse = await fetch(
+              `/api/approval-history/comment?${params.toString()}`,
+              { cache: "no-store" },
+            );
+            if (!commentResponse.ok) return item;
+
+            const commentData = await commentResponse.json();
+            const comment =
+              typeof commentData.comments === "string"
+                ? commentData.comments.trim()
+                : "";
+
+            return comment
+              ? { ...item, approvalComment: comment }
+              : item;
+          } catch {
+            return item;
+          }
+        }),
       );
+
+      setHistoryItems(itemsWithComments);
     } catch (error) {
       setHistoryError(
         error instanceof Error
@@ -1326,17 +1359,34 @@ export default function Home() {
                         </strong>
                       </div>
 
-                      {item.status === "Rejected" &&
-                        item.rejectionReason && (
+                      {item.status === "Approved" &&
+                        item.approvalComment && (
                           <div
-                            className="status error"
-                            style={{ marginTop: 12 }}
+                            className="status success"
+                            style={{
+                              marginTop: 12,
+                              whiteSpace: "pre-wrap",
+                            }}
                           >
-                            Rejection Reason:{" "}
-                            {item.rejectionReason}
+                            Approval Comment:{" "}
+                            {item.approvalComment}
                           </div>
                         )}
 
+                      {item.status === "Rejected" &&
+                        (item.rejectionReason || item.approvalComment) && (
+                          <div
+                            className="status error"
+                            style={{
+                              marginTop: 12,
+                              whiteSpace: "pre-wrap",
+                            }}
+                          >
+                            {item.rejectionReason
+                              ? `Rejection Reason: ${item.rejectionReason}`
+                              : `Rejection Comment: ${item.approvalComment}`}
+                          </div>
+                        )}
 
                       <div
                         className="row"
