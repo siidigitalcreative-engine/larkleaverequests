@@ -1133,6 +1133,7 @@ export type UndertimeHistoryItem = {
   submittedAt: number;
   undertimeDate?: number;
   rejectionReason?: string;
+  approvalComment?: string;
 };
 
 export async function listEmployeeUndertimeHistory(
@@ -1226,6 +1227,8 @@ export async function listEmployeeUndertimeHistory(
               "Rejection Reason"
             ],
           ) || undefined,
+        approvalComment:
+          text(f["Approval Comment"]) || undefined,
       });
     }
 
