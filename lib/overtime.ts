@@ -1056,6 +1056,7 @@ export type OvertimeHistoryItem = {
   submittedAt: number;
   overtimeDate?: number;
   rejectionReason?: string;
+  approvalComment?: string;
 };
 
 export async function listEmployeeOvertimeHistory(
@@ -1097,6 +1098,8 @@ export async function listEmployeeOvertimeHistory(
           Number(f["Overtime Date"] ?? 0) || undefined,
         rejectionReason:
           text(f["Rejection Reason"]) || undefined,
+        approvalComment:
+          text(f["Approval Comment"]) || undefined,
       });
     }
 
