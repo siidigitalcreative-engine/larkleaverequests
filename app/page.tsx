@@ -1,6 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 type Employee = {
   employeeId: string;
@@ -18,11 +23,20 @@ type NotifyContact = {
   name: string;
 };
 
-type RequestType = "leave" | "changeOff" | "history";
+type RequestType =
+  | "leave"
+  | "changeOff"
+  | "history";
 
 type ApprovalHistoryItem = {
   requestId: string;
-  requestType: "Leave Request" | "Change Day-Off" | "Overtime" | "Undertime";
+  requestType:
+    | "Leave Request"
+    | "Change Day-Off"
+    | "Overtime"
+    | "Undertime"
+    | "General Approval"
+    | "Offset Approval";
   title: string;
   detail: string;
   status: string;
@@ -33,14 +47,22 @@ type ApprovalHistoryItem = {
   requestedNewOffDate?: number;
   overtimeDate?: number;
   undertimeDate?: number;
+  dateWorked?: number;
+  requestedOffsetDate?: number;
   rejectionReason?: string;
   approvalComment?: string;
 };
 
-type HistoryFilter = "All" | "Pending" | "Approved" | "Rejected";
+type HistoryFilter =
+  | "All"
+  | "Pending"
+  | "Approved"
+  | "Rejected";
 
 function mobileDisplay(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 10);
+  const digits = value
+    .replace(/\D/g, "")
+    .slice(0, 10);
 
   return [
     digits.slice(0, 3),
@@ -53,21 +75,31 @@ function mobileDisplay(value: string) {
 
 function ymdLocal(date: Date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(
+    date.getMonth() + 1,
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate(),
+  ).padStart(2, "0");
+
   return `${year}-${month}-${day}`;
 }
 
 function currentWeekBounds() {
   const today = new Date();
   const day = today.getDay();
-  const daysSinceMonday = (day + 6) % 7;
+  const daysSinceMonday =
+    (day + 6) % 7;
 
   const monday = new Date(today);
-  monday.setDate(today.getDate() - daysSinceMonday);
+  monday.setDate(
+    today.getDate() - daysSinceMonday,
+  );
 
   const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
+  sunday.setDate(
+    monday.getDate() + 6,
+  );
 
   return {
     start: ymdLocal(monday),
@@ -78,122 +110,442 @@ function currentWeekBounds() {
 function historyDate(value?: number) {
   if (!value) return "—";
 
-  return new Intl.DateTimeFormat("en-PH", {
-    timeZone: "Asia/Manila",
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      timeZone: "Asia/Manila",
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+    },
+  ).format(new Date(value));
 }
 
-
-function pickerDateText(value: string) {
+function pickerDateText(
+  value: string,
+) {
   if (!value) return "Select date";
 
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return value;
+  const [year, month, day] =
+    value.split("-").map(Number);
 
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    },
+  ).format(
+    new Date(
+      year,
+      month - 1,
+      day,
+    ),
+  );
 }
 
-function pickerTimeText(value: string) {
+function pickerTimeText(
+  value: string,
+) {
   if (!value) return "Select time";
 
-  const [hour, minute] = value.split(":").map(Number);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return value;
+  const [hour, minute] =
+    value.split(":").map(Number);
+
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute)
+  ) {
+    return value;
+  }
 
   const date = new Date();
-  date.setHours(hour, minute, 0, 0);
+  date.setHours(
+    hour,
+    minute,
+    0,
+    0,
+  );
 
-  return new Intl.DateTimeFormat("en-PH", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    },
+  ).format(date);
+}
+
+function historySummary(
+  item: ApprovalHistoryItem,
+) {
+  if (
+    item.requestType ===
+    "Leave Request"
+  ) {
+    return (
+      <>
+        {historyDate(
+          item.startDate,
+        )}{" "}
+        →{" "}
+        {historyDate(
+          item.endDate,
+        )}
+      </>
+    );
+  }
+
+  if (
+    item.requestType === "Overtime"
+  ) {
+    return (
+      <>
+        {historyDate(
+          item.overtimeDate,
+        )}
+        {item.detail
+          ? ` • ${item.detail}`
+          : ""}
+      </>
+    );
+  }
+
+  if (
+    item.requestType ===
+    "Undertime"
+  ) {
+    return (
+      <>
+        {historyDate(
+          item.undertimeDate,
+        )}
+        {item.detail
+          ? ` • ${item.detail}`
+          : ""}
+      </>
+    );
+  }
+
+  if (
+    item.requestType ===
+    "Change Day-Off"
+  ) {
+    return (
+      <>
+        {historyDate(
+          item.currentOffDate,
+        )}{" "}
+        →{" "}
+        {historyDate(
+          item.requestedNewOffDate,
+        )}
+      </>
+    );
+  }
+
+  if (
+    item.requestType ===
+    "Offset Approval"
+  ) {
+    return (
+      <>
+        {historyDate(
+          item.dateWorked,
+        )}{" "}
+        →{" "}
+        {historyDate(
+          item.requestedOffsetDate,
+        )}
+        {item.detail
+          ? ` • ${item.detail}`
+          : ""}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {item.detail ||
+        "General Approval"}
+    </>
+  );
 }
 
 export default function Home() {
-  const [loading, setLoading] = useState(true);
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [employees, setEmployees] = useState<PublicEmployee[]>([]);
-  const [contacts, setContacts] = useState<NotifyContact[]>([]);
-  const [leaveTypes, setLeaveTypes] = useState<string[]>([]);
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const [employeeName, setEmployeeName] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [staySignedIn, setStaySignedIn] = useState(true);
+  const [
+    employee,
+    setEmployee,
+  ] =
+    useState<Employee | null>(
+      null,
+    );
 
-  const [requestType, setRequestType] = useState<RequestType | null>(
-    null,
-  );
+  const [
+    employees,
+    setEmployees,
+  ] = useState<
+    PublicEmployee[]
+  >([]);
+
+  const [
+    contacts,
+    setContacts,
+  ] = useState<
+    NotifyContact[]
+  >([]);
+
+  const [
+    leaveTypes,
+    setLeaveTypes,
+  ] = useState<
+    string[]
+  >([]);
+
+  const [
+    employeeName,
+    setEmployeeName,
+  ] = useState("");
+
+  const [
+    mobile,
+    setMobile,
+  ] = useState("");
+
+  const [
+    staySignedIn,
+    setStaySignedIn,
+  ] = useState(true);
+
+  const [
+    requestType,
+    setRequestType,
+  ] =
+    useState<RequestType | null>(
+      null,
+    );
 
   // Leave
-  const [leaveType, setLeaveType] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [dayType, setDayType] = useState<
+  const [
+    leaveType,
+    setLeaveType,
+  ] = useState("");
+
+  const [
+    startDate,
+    setStartDate,
+  ] = useState("");
+
+  const [
+    endDate,
+    setEndDate,
+  ] = useState("");
+
+  const [
+    dayType,
+    setDayType,
+  ] = useState<
     "Full Day" | "Partial Day"
   >("Full Day");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [leaveReason, setLeaveReason] = useState("");
-  const [notify, setNotify] = useState<string[]>([]);
-  const [attachment, setAttachment] = useState<File | null>(null);
+
+  const [
+    startTime,
+    setStartTime,
+  ] = useState("");
+
+  const [
+    endTime,
+    setEndTime,
+  ] = useState("");
+
+  const [
+    leaveReason,
+    setLeaveReason,
+  ] = useState("");
+
+  const [
+    notify,
+    setNotify,
+  ] = useState<string[]>(
+    [],
+  );
+
+  const [
+    attachment,
+    setAttachment,
+  ] =
+    useState<File | null>(
+      null,
+    );
 
   // Change Day-Off
-  const [currentOffDate, setCurrentOffDate] = useState("");
-  const [requestedNewOffDate, setRequestedNewOffDate] = useState("");
-  const [changeOffReason, setChangeOffReason] = useState("");
-  const [changeOffAttachment, setChangeOffAttachment] =
-    useState<File | null>(null);
+  const [
+    currentOffDate,
+    setCurrentOffDate,
+  ] = useState("");
 
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] = useState<
-    "normal" | "error" | "success"
+  const [
+    requestedNewOffDate,
+    setRequestedNewOffDate,
+  ] = useState("");
+
+  const [
+    changeOffReason,
+    setChangeOffReason,
+  ] = useState("");
+
+  const [
+    changeOffAttachment,
+    setChangeOffAttachment,
+  ] =
+    useState<File | null>(
+      null,
+    );
+
+  const [
+    busy,
+    setBusy,
+  ] = useState(false);
+
+  const [
+    status,
+    setStatus,
+  ] = useState("");
+
+  const [
+    statusKind,
+    setStatusKind,
+  ] = useState<
+    | "normal"
+    | "error"
+    | "success"
   >("normal");
-  const [submittedId, setSubmittedId] = useState("");
-  const [submittedType, setSubmittedType] =
-    useState<RequestType | null>(null);
 
-  const [historyItems, setHistoryItems] = useState<
+  const [
+    submittedId,
+    setSubmittedId,
+  ] = useState("");
+
+  const [
+    submittedType,
+    setSubmittedType,
+  ] =
+    useState<RequestType | null>(
+      null,
+    );
+
+  const [
+    historyItems,
+    setHistoryItems,
+  ] = useState<
     ApprovalHistoryItem[]
   >([]);
-  const [historyFilter, setHistoryFilter] =
-    useState<HistoryFilter>("All");
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError] = useState("");
-  const [historyCommentTarget, setHistoryCommentTarget] = useState("");
-  const [historyCommentText, setHistoryCommentText] = useState("");
-  const [historyCommentAttachment, setHistoryCommentAttachment] =
-    useState<File | null>(null);
-  const [historyComments, setHistoryComments] = useState("");
-  const [historyCommentLoading, setHistoryCommentLoading] =
-    useState(false);
-  const [historyCommentBusy, setHistoryCommentBusy] = useState(false);
-  const [historyCommentStatus, setHistoryCommentStatus] = useState("");
-  const [historyCommentFileKey, setHistoryCommentFileKey] = useState(0);
 
-  const week = useMemo(() => currentWeekBounds(), []);
+  const [
+    historyFilter,
+    setHistoryFilter,
+  ] =
+    useState<HistoryFilter>(
+      "All",
+    );
+
+  const [
+    historyLoading,
+    setHistoryLoading,
+  ] = useState(false);
+
+  const [
+    historyError,
+    setHistoryError,
+  ] = useState("");
+
+  const [
+    historyCommentTarget,
+    setHistoryCommentTarget,
+  ] = useState("");
+
+  const [
+    historyCommentText,
+    setHistoryCommentText,
+  ] = useState("");
+
+  const [
+    historyCommentAttachment,
+    setHistoryCommentAttachment,
+  ] =
+    useState<File | null>(
+      null,
+    );
+
+  const [
+    historyComments,
+    setHistoryComments,
+  ] = useState("");
+
+  const [
+    historyCommentLoading,
+    setHistoryCommentLoading,
+  ] = useState(false);
+
+  const [
+    historyCommentBusy,
+    setHistoryCommentBusy,
+  ] = useState(false);
+
+  const [
+    historyCommentStatus,
+    setHistoryCommentStatus,
+  ] = useState("");
+
+  const [
+    historyCommentFileKey,
+    setHistoryCommentFileKey,
+  ] = useState(0);
+
+  const week =
+    useMemo(
+      () =>
+        currentWeekBounds(),
+      [],
+    );
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/auth/session", { cache: "no-store" }).then((r) =>
-        r.json(),
-      ),
-      fetch("/api/employees", { cache: "no-store" }).then((r) =>
-        r.json(),
-      ),
-      fetch("/api/notify-contacts", { cache: "no-store" }).then(
-        (r) => r.json(),
-      ),
-      fetch("/api/leave-options", { cache: "no-store" }).then((r) =>
-        r.json(),
-      ),
+      fetch(
+        "/api/auth/session",
+        {
+          cache: "no-store",
+        },
+      ).then((r) => r.json()),
+      fetch(
+        "/api/employees",
+        {
+          cache: "no-store",
+        },
+      ).then((r) => r.json()),
+      fetch(
+        "/api/notify-contacts",
+        {
+          cache: "no-store",
+        },
+      ).then((r) => r.json()),
+      fetch(
+        "/api/leave-options",
+        {
+          cache: "no-store",
+        },
+      ).then((r) => r.json()),
     ])
       .then(
         ([
@@ -202,114 +554,151 @@ export default function Home() {
           contactData,
           leaveOptionsData,
         ]) => {
-          if (session.authenticated) {
-            setEmployee(session.employee);
+          if (
+            session.authenticated
+          ) {
+            setEmployee(
+              session.employee,
+            );
           }
 
-          setEmployees(employeeData.employees || []);
-          setContacts(contactData.contacts || []);
+          setEmployees(
+            employeeData.employees ||
+              [],
+          );
 
-          const options = Array.isArray(
-            leaveOptionsData.leaveTypes,
-          )
-            ? leaveOptionsData.leaveTypes.filter(
-                (value: unknown): value is string =>
-                  typeof value === "string" &&
-                  value.trim().length > 0,
+          setContacts(
+            contactData.contacts ||
+              [],
+          );
+
+          const options =
+            Array.isArray(
+              leaveOptionsData.leaveTypes,
+            )
+              ? leaveOptionsData.leaveTypes.filter(
+                  (
+                    value: unknown,
+                  ): value is string =>
+                    typeof value ===
+                      "string" &&
+                    value.trim()
+                      .length > 0,
+                )
+              : [];
+
+          setLeaveTypes(
+            options,
+          );
+
+          setLeaveType(
+            (current) =>
+              current &&
+              options.includes(
+                current,
               )
-            : [];
-
-          setLeaveTypes(options);
-          setLeaveType((current) =>
-            current && options.includes(current)
-              ? current
-              : options[0] || "",
+                ? current
+                : options[0] ||
+                  "",
           );
         },
       )
-      .finally(() => setLoading(false));
+      .finally(() =>
+        setLoading(false),
+      );
   }, []);
 
-  const filteredEmployees = useMemo(() => {
-    const query = employeeName.trim().toLowerCase();
+  const filteredEmployees =
+    useMemo(() => {
+      const query =
+        employeeName
+          .trim()
+          .toLowerCase();
 
-    if (!query) return [];
+      if (!query) {
+        return [];
+      }
 
-    return employees
-      .filter((item) =>
-        item.employeeName.toLowerCase().includes(query),
-      )
-      .slice(0, 8);
-  }, [employeeName, employees]);
+      return employees
+        .filter((item) =>
+          item.employeeName
+            .toLowerCase()
+            .includes(query),
+        )
+        .slice(0, 8);
+    }, [
+      employeeName,
+      employees,
+    ]);
 
-  const filteredHistory = useMemo(() => {
-    if (historyFilter === "All") return historyItems;
+  const filteredHistory =
+    useMemo(() => {
+      if (
+        historyFilter ===
+        "All"
+      ) {
+        return historyItems;
+      }
 
-    return historyItems.filter(
-      (item) => item.status === historyFilter,
-    );
-  }, [historyFilter, historyItems]);
+      return historyItems.filter(
+        (item) =>
+          item.status ===
+          historyFilter,
+      );
+    }, [
+      historyFilter,
+      historyItems,
+    ]);
 
   async function loadHistory() {
     setHistoryLoading(true);
     setHistoryError("");
 
     try {
-      const response = await fetch("/api/approval-history", {
-        cache: "no-store",
-      });
+      const response =
+        await fetch(
+          "/api/approval-history",
+          {
+            cache:
+              "no-store",
+          },
+        );
 
-      const contentType = response.headers.get("content-type") || "";
+      const contentType =
+        response.headers.get(
+          "content-type",
+        ) || "";
 
-      if (!contentType.includes("application/json")) {
+      if (
+        !contentType.includes(
+          "application/json",
+        )
+      ) {
         throw new Error(
           "Approval History API is not deployed. Add app/api/approval-history/route.ts and redeploy.",
         );
       }
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
-          data.error || "Unable to load approval history.",
+          data.error ||
+            "Unable to load approval history.",
         );
       }
 
-      const items: ApprovalHistoryItem[] = Array.isArray(data.items)
-        ? data.items
-        : [];
+      const items: ApprovalHistoryItem[] =
+        Array.isArray(
+          data.items,
+        )
+          ? data.items
+          : [];
 
-      // Load the existing approval-history comment for each request so an
-      // approval/rejection comment can be shown directly on the history card.
-      const itemsWithComments = await Promise.all(
-        items.map(async (item) => {
-          try {
-            const params = new URLSearchParams({
-              requestType: item.requestType,
-              requestId: item.requestId,
-            });
-            const commentResponse = await fetch(
-              `/api/approval-history/comment?${params.toString()}`,
-              { cache: "no-store" },
-            );
-            if (!commentResponse.ok) return item;
-
-            const commentData = await commentResponse.json();
-            const comment =
-              typeof commentData.comments === "string"
-                ? commentData.comments.trim()
-                : "";
-
-            return comment
-              ? { ...item, approvalComment: comment }
-              : item;
-          } catch {
-            return item;
-          }
-        }),
-      );
-
-      setHistoryItems(itemsWithComments);
+      // Keep employee Comments separate from the real
+      // Approval Comment / Rejection Reason fields.
+      setHistoryItems(items);
     } catch (error) {
       setHistoryError(
         error instanceof Error
@@ -321,57 +710,107 @@ export default function Home() {
     }
   }
 
-  function historyItemKey(item: ApprovalHistoryItem) {
+  function historyItemKey(
+    item: ApprovalHistoryItem,
+  ) {
     return `${item.requestType}::${item.requestId}`;
   }
 
-  async function openHistoryComment(item: ApprovalHistoryItem) {
-    const key = historyItemKey(item);
+  async function openHistoryComment(
+    item: ApprovalHistoryItem,
+  ) {
+    const key =
+      historyItemKey(item);
 
-    if (historyCommentTarget === key) {
-      setHistoryCommentTarget("");
-      setHistoryCommentText("");
-      setHistoryCommentAttachment(null);
+    if (
+      historyCommentTarget ===
+      key
+    ) {
+      setHistoryCommentTarget(
+        "",
+      );
+      setHistoryCommentText(
+        "",
+      );
+      setHistoryCommentAttachment(
+        null,
+      );
       setHistoryComments("");
-      setHistoryCommentStatus("");
-      setHistoryCommentFileKey((value) => value + 1);
+      setHistoryCommentStatus(
+        "",
+      );
+      setHistoryCommentFileKey(
+        (value) =>
+          value + 1,
+      );
       return;
     }
 
-    setHistoryCommentTarget(key);
+    setHistoryCommentTarget(
+      key,
+    );
     setHistoryCommentText("");
-    setHistoryCommentAttachment(null);
+    setHistoryCommentAttachment(
+      null,
+    );
     setHistoryComments("");
-    setHistoryCommentStatus("");
-    setHistoryCommentLoading(true);
-    setHistoryCommentFileKey((value) => value + 1);
+    setHistoryCommentStatus(
+      "",
+    );
+    setHistoryCommentLoading(
+      true,
+    );
+    setHistoryCommentFileKey(
+      (value) =>
+        value + 1,
+    );
 
     try {
-      const params = new URLSearchParams({
-        requestType: item.requestType,
-        requestId: item.requestId,
-      });
+      const params =
+        new URLSearchParams(
+          {
+            requestType:
+              item.requestType,
+            requestId:
+              item.requestId,
+          },
+        );
 
-      const response = await fetch(
-        `/api/approval-history/comment?${params.toString()}`,
-        { cache: "no-store" },
-      );
+      const response =
+        await fetch(
+          `/api/approval-history/comment?${params.toString()}`,
+          {
+            cache:
+              "no-store",
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to load comments.");
+        throw new Error(
+          data.error ||
+            "Unable to load comments.",
+        );
       }
 
       setHistoryComments(
-        typeof data.comments === "string" ? data.comments : "",
+        typeof data.comments ===
+          "string"
+          ? data.comments
+          : "",
       );
     } catch (error) {
       setHistoryCommentStatus(
-        error instanceof Error ? error.message : "Unable to load comments.",
+        error instanceof Error
+          ? error.message
+          : "Unable to load comments.",
       );
     } finally {
-      setHistoryCommentLoading(false);
+      setHistoryCommentLoading(
+        false,
+      );
     }
   }
 
@@ -380,48 +819,95 @@ export default function Home() {
     item: ApprovalHistoryItem,
   ) {
     event.preventDefault();
-    setHistoryCommentBusy(true);
-    setHistoryCommentStatus("");
+    setHistoryCommentBusy(
+      true,
+    );
+    setHistoryCommentStatus(
+      "",
+    );
 
     try {
-      if (!historyCommentText.trim() && !historyCommentAttachment) {
+      if (
+        !historyCommentText.trim() &&
+        !historyCommentAttachment
+      ) {
         throw new Error(
           "Enter a comment or attach a file before sending.",
         );
       }
 
-      const form = new FormData();
-      form.set("requestType", item.requestType);
-      form.set("requestId", item.requestId);
-      form.set("comment", historyCommentText.trim());
+      const form =
+        new FormData();
 
-      if (historyCommentAttachment) {
-        form.set("attachment", historyCommentAttachment);
-      }
-
-      const response = await fetch(
-        "/api/approval-history/comment",
-        {
-          method: "POST",
-          body: form,
-        },
+      form.set(
+        "requestType",
+        item.requestType,
       );
 
-      const data = await response.json();
+      form.set(
+        "requestId",
+        item.requestId,
+      );
+
+      form.set(
+        "comment",
+        historyCommentText.trim(),
+      );
+
+      if (
+        historyCommentAttachment
+      ) {
+        form.set(
+          "attachment",
+          historyCommentAttachment,
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/approval-history/comment",
+          {
+            method: "POST",
+            body: form,
+          },
+        );
+
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to send comment.");
+        throw new Error(
+          data.error ||
+            "Unable to send comment.",
+        );
       }
 
       setHistoryComments(
-        typeof data.comments === "string" ? data.comments : historyComments,
+        typeof data.comments ===
+          "string"
+          ? data.comments
+          : historyComments,
       );
-      setHistoryCommentText("");
-      setHistoryCommentAttachment(null);
-      setHistoryCommentFileKey((value) => value + 1);
+
+      setHistoryCommentText(
+        "",
+      );
+
+      setHistoryCommentAttachment(
+        null,
+      );
+
+      setHistoryCommentFileKey(
+        (value) =>
+          value + 1,
+      );
 
       const warningText =
-        Array.isArray(data.warnings) && data.warnings.length > 0
+        Array.isArray(
+          data.warnings,
+        ) &&
+        data.warnings.length >
+          0
           ? ` Comment saved, but notification warning: ${data.warnings.join(
               "; ",
             )}`
@@ -432,52 +918,85 @@ export default function Home() {
       );
     } catch (error) {
       setHistoryCommentStatus(
-        error instanceof Error ? error.message : "Unable to send comment.",
+        error instanceof Error
+          ? error.message
+          : "Unable to send comment.",
       );
     } finally {
-      setHistoryCommentBusy(false);
+      setHistoryCommentBusy(
+        false,
+      );
     }
   }
 
-  async function verify(event: FormEvent) {
+  async function verify(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setStatus("");
 
     try {
-      const response = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeName,
-          mobileNumber: `+63${mobile.replace(/\D/g, "")}`,
-          staySignedIn,
-        }),
-      });
+      const response =
+        await fetch(
+          "/api/auth/verify",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify(
+              {
+                employeeName,
+                mobileNumber: `+63${mobile.replace(
+                  /\D/g,
+                  "",
+                )}`,
+                staySignedIn,
+              },
+            ),
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Verification failed.");
+        throw new Error(
+          data.error ||
+            "Verification failed.",
+        );
       }
 
-      setEmployee(data.employee);
+      setEmployee(
+        data.employee,
+      );
       setStatus("");
-      setStatusKind("success");
+      setStatusKind(
+        "success",
+      );
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
           : "Verification failed.",
       );
-      setStatusKind("error");
+      setStatusKind(
+        "error",
+      );
     } finally {
       setBusy(false);
     }
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch(
+      "/api/auth/logout",
+      {
+        method: "POST",
+      },
+    );
 
     setEmployee(null);
     setEmployeeName("");
@@ -488,12 +1007,23 @@ export default function Home() {
     setHistoryItems([]);
     setHistoryFilter("All");
     setHistoryError("");
-    setHistoryCommentTarget("");
-    setHistoryCommentText("");
-    setHistoryCommentAttachment(null);
+    setHistoryCommentTarget(
+      "",
+    );
+    setHistoryCommentText(
+      "",
+    );
+    setHistoryCommentAttachment(
+      null,
+    );
     setHistoryComments("");
-    setHistoryCommentStatus("");
-    setHistoryCommentFileKey((value) => value + 1);
+    setHistoryCommentStatus(
+      "",
+    );
+    setHistoryCommentFileKey(
+      (value) =>
+        value + 1,
+    );
     setStatus("");
   }
 
@@ -508,12 +1038,18 @@ export default function Home() {
     setAttachment(null);
 
     setCurrentOffDate("");
-    setRequestedNewOffDate("");
+    setRequestedNewOffDate(
+      "",
+    );
     setChangeOffReason("");
-    setChangeOffAttachment(null);
+    setChangeOffAttachment(
+      null,
+    );
   }
 
-  async function submitLeave(event: FormEvent) {
+  async function submitLeave(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setStatus("");
@@ -525,85 +1061,161 @@ export default function Home() {
         );
       }
 
-      const form = new FormData();
+      const form =
+        new FormData();
 
-      form.set("leaveType", leaveType);
-      form.set("startDate", startDate);
-      form.set("endDate", endDate);
-      form.set("dayType", dayType);
-      form.set("reason", leaveReason);
+      form.set(
+        "leaveType",
+        leaveType,
+      );
+      form.set(
+        "startDate",
+        startDate,
+      );
+      form.set(
+        "endDate",
+        endDate,
+      );
+      form.set(
+        "dayType",
+        dayType,
+      );
+      form.set(
+        "reason",
+        leaveReason,
+      );
 
-      if (dayType === "Partial Day") {
-        form.set("startTime", startTime);
-        form.set("endTime", endTime);
-      }
-
-      notify.forEach((name) => form.append("notify", name));
-
-      if (attachment) {
-        form.set("attachment", attachment);
-      }
-
-      const response = await fetch("/api/leave", {
-        method: "POST",
-        body: form,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Unable to submit leave request.",
+      if (
+        dayType ===
+        "Partial Day"
+      ) {
+        form.set(
+          "startTime",
+          startTime,
+        );
+        form.set(
+          "endTime",
+          endTime,
         );
       }
 
-      setSubmittedId(data.requestId);
-      setSubmittedType("leave");
-      setStatus("Leave request submitted for approval.");
-      setStatusKind("success");
+      notify.forEach(
+        (name) =>
+          form.append(
+            "notify",
+            name,
+          ),
+      );
+
+      if (attachment) {
+        form.set(
+          "attachment",
+          attachment,
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/leave",
+          {
+            method: "POST",
+            body: form,
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            "Unable to submit leave request.",
+        );
+      }
+
+      setSubmittedId(
+        data.requestId,
+      );
+      setSubmittedType(
+        "leave",
+      );
+      setStatus(
+        "Leave request submitted for approval.",
+      );
+      setStatusKind(
+        "success",
+      );
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
           : "Unable to submit leave request.",
       );
-      setStatusKind("error");
+      setStatusKind(
+        "error",
+      );
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitChangeOff(event: FormEvent) {
+  async function submitChangeOff(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setStatus("");
 
     try {
       if (
-        requestedNewOffDate < week.start ||
-        requestedNewOffDate > week.end
+        requestedNewOffDate <
+          week.start ||
+        requestedNewOffDate >
+          week.end
       ) {
         throw new Error(
           `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
         );
       }
 
-      const form = new FormData();
+      const form =
+        new FormData();
 
-      form.set("currentOffDate", currentOffDate);
-      form.set("requestedNewOffDate", requestedNewOffDate);
-      form.set("reason", changeOffReason);
+      form.set(
+        "currentOffDate",
+        currentOffDate,
+      );
 
-      if (changeOffAttachment) {
-        form.set("attachment", changeOffAttachment);
+      form.set(
+        "requestedNewOffDate",
+        requestedNewOffDate,
+      );
+
+      form.set(
+        "reason",
+        changeOffReason,
+      );
+
+      if (
+        changeOffAttachment
+      ) {
+        form.set(
+          "attachment",
+          changeOffAttachment,
+        );
       }
 
-      const response = await fetch("/api/change-day-off", {
-        method: "POST",
-        body: form,
-      });
+      const response =
+        await fetch(
+          "/api/change-day-off",
+          {
+            method: "POST",
+            body: form,
+          },
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         throw new Error(
@@ -612,17 +1224,31 @@ export default function Home() {
         );
       }
 
-      setSubmittedId(data.requestId);
-      setSubmittedType("changeOff");
-      setStatus("Change Day-Off request submitted for approval.");
-      setStatusKind("success");
+      setSubmittedId(
+        data.requestId,
+      );
+
+      setSubmittedType(
+        "changeOff",
+      );
+
+      setStatus(
+        "Change Day-Off request submitted for approval.",
+      );
+
+      setStatusKind(
+        "success",
+      );
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
           : "Unable to submit Change Day-Off request.",
       );
-      setStatusKind("error");
+
+      setStatusKind(
+        "error",
+      );
     } finally {
       setBusy(false);
     }
@@ -632,7 +1258,9 @@ export default function Home() {
     return (
       <main className="shell">
         <div className="wrap">
-          <div className="card">Loading Approvals…</div>
+          <div className="card">
+            Loading Approvals…
+          </div>
         </div>
       </main>
     );
@@ -695,7 +1323,8 @@ export default function Home() {
 
         @media (max-width: 640px) {
           .grid {
-            grid-template-columns: minmax(0, 1fr) !important;
+            grid-template-columns:
+              minmax(0, 1fr) !important;
             width: 100% !important;
           }
 
@@ -705,7 +1334,8 @@ export default function Home() {
             max-width: 100% !important;
           }
 
-          .dateInputShell {
+          .dateInputShell,
+          .timeInputShell {
             width: 100% !important;
             max-width: 100% !important;
           }
@@ -715,79 +1345,124 @@ export default function Home() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
+
             <div>
               <h1>Approvals</h1>
-              <p>Submit and track employee requests for approval.</p>
+              <p>
+                Submit and track
+                employee requests for
+                approval.
+              </p>
             </div>
           </div>
 
           {!employee ? (
             <div className="card">
-              <h2 className="sectionTitle">Verify your identity</h2>
+              <h2 className="sectionTitle">
+                Verify your identity
+              </h2>
+
               <p className="muted">
-                Use your employee record and registered mobile number.
+                Use your employee
+                record and registered
+                mobile number.
               </p>
 
-              <form onSubmit={verify}>
+              <form
+                onSubmit={verify}
+              >
                 <label className="field">
-                  <span className="label">Employee Name</span>
+                  <span className="label">
+                    Employee Name
+                  </span>
+
                   <input
                     className="input"
-                    value={employeeName}
-                    onChange={(event) =>
-                      setEmployeeName(event.target.value)
+                    value={
+                      employeeName
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setEmployeeName(
+                        event.target
+                          .value,
+                      )
                     }
                     placeholder="Search your name"
                     required
                   />
                 </label>
 
-                {filteredEmployees.length > 0 && (
+                {filteredEmployees.length >
+                  0 && (
                   <div className="checklist">
-                    {filteredEmployees.map((item) => (
-                      <button
-                        key={item.employeeName}
-                        type="button"
-                        className="check"
-                        onClick={() =>
-                          setEmployeeName(item.employeeName)
-                        }
-                        style={{
-                          textAlign: "left",
-                          background: "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div>
-                          <strong>{item.employeeName}</strong>
-                          <div className="small">
-                            {item.department || "Employee"}
+                    {filteredEmployees.map(
+                      (item) => (
+                        <button
+                          key={
+                            item.employeeName
+                          }
+                          type="button"
+                          className="check"
+                          onClick={() =>
+                            setEmployeeName(
+                              item.employeeName,
+                            )
+                          }
+                          style={{
+                            textAlign:
+                              "left",
+                            background:
+                              "#fff",
+                            cursor:
+                              "pointer",
+                          }}
+                        >
+                          <div>
+                            <strong>
+                              {
+                                item.employeeName
+                              }
+                            </strong>
+
+                            <div className="small">
+                              {item.department ||
+                                "Employee"}
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      ),
+                    )}
                   </div>
                 )}
 
                 <label className="field">
                   <span className="label">
-                    Registered Mobile Number
+                    Registered Mobile
+                    Number
                   </span>
 
                   <div
                     className="row"
                     style={{
-                      alignItems: "stretch",
-                      flexWrap: "nowrap",
+                      alignItems:
+                        "stretch",
+                      flexWrap:
+                        "nowrap",
                     }}
                   >
                     <div
                       className="input"
                       style={{
                         width: 70,
-                        background: "#f8fafc",
-                        color: "#475467",
+                        background:
+                          "#f8fafc",
+                        color:
+                          "#475467",
                       }}
                     >
                       +63
@@ -795,12 +1470,22 @@ export default function Home() {
 
                     <input
                       className="input"
-                      value={mobileDisplay(mobile)}
-                      onChange={(event) =>
+                      value={mobileDisplay(
+                        mobile,
+                      )}
+                      onChange={(
+                        event,
+                      ) =>
                         setMobile(
                           event.target.value
-                            .replace(/\D/g, "")
-                            .slice(0, 10),
+                            .replace(
+                              /\D/g,
+                              "",
+                            )
+                            .slice(
+                              0,
+                              10,
+                            ),
                         )
                       }
                       placeholder="917 123 4567"
@@ -814,21 +1499,35 @@ export default function Home() {
                   className="check"
                   style={{
                     marginTop: 16,
-                    cursor: "pointer",
-                    background: "#f8fafc",
+                    cursor:
+                      "pointer",
+                    background:
+                      "#f8fafc",
                   }}
                 >
                   <input
                     type="checkbox"
-                    checked={staySignedIn}
-                    onChange={(event) =>
-                      setStaySignedIn(event.target.checked)
+                    checked={
+                      staySignedIn
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setStaySignedIn(
+                        event.target
+                          .checked,
+                      )
                     }
                   />
+
                   <div>
-                    <strong>Stay signed in</strong>
+                    <strong>
+                      Stay signed in
+                    </strong>
+
                     <div className="small">
-                      Keep me signed in on this device.
+                      Keep me signed in
+                      on this device.
                     </div>
                   </div>
                 </label>
@@ -836,18 +1535,25 @@ export default function Home() {
                 <button
                   className="btn btnPrimary"
                   disabled={busy}
-                  style={{ width: "100%", marginTop: 18 }}
+                  style={{
+                    width: "100%",
+                    marginTop: 18,
+                  }}
                 >
-                  {busy ? "Verifying…" : "Continue"}
+                  {busy
+                    ? "Verifying…"
+                    : "Continue"}
                 </button>
               </form>
 
               {status && (
                 <div
                   className={`status ${
-                    statusKind === "error"
+                    statusKind ===
+                    "error"
                       ? "error"
-                      : statusKind === "success"
+                      : statusKind ===
+                          "success"
                         ? "success"
                         : ""
                   }`}
@@ -858,42 +1564,61 @@ export default function Home() {
             </div>
           ) : submittedId ? (
             <div className="card successPanel">
-              <div className="successIcon">✓</div>
+              <div className="successIcon">
+                ✓
+              </div>
 
               <h2 className="sectionTitle">
-                {submittedType === "changeOff"
+                {submittedType ===
+                "changeOff"
                   ? "Change Day-Off request submitted"
                   : "Leave request submitted"}
               </h2>
 
               <p className="muted">
-                Your request has been sent to the{" "}
-                <strong>{employee.leaveApprovalGroup}</strong>{" "}
+                Your request has been
+                sent to the{" "}
+                <strong>
+                  {
+                    employee.leaveApprovalGroup
+                  }
+                </strong>{" "}
                 approval group.
               </p>
 
               <div
                 className="status success"
                 style={{
-                  margin: "18px auto",
+                  margin:
+                    "18px auto",
                   maxWidth: 440,
                 }}
               >
-                Request ID: <strong>{submittedId}</strong>
+                Request ID:{" "}
+                <strong>
+                  {submittedId}
+                </strong>
               </div>
 
-              {status && <div className="status">{status}</div>}
+              {status && (
+                <div className="status">
+                  {status}
+                </div>
+              )}
 
               <div
                 className="row"
                 style={{
-                  justifyContent: "center",
+                  justifyContent:
+                    "center",
                   marginTop: 18,
                 }}
               >
                 <button
                   className="btn btnPrimary"
-                  onClick={resetForAnotherRequest}
+                  onClick={
+                    resetForAnotherRequest
+                  }
                 >
                   File another request
                 </button>
@@ -911,11 +1636,17 @@ export default function Home() {
               <div className="between">
                 <div>
                   <h2 className="sectionTitle">
-                    What would you like to request?
+                    What would you like
+                    to request?
                   </h2>
+
                   <p className="muted">
-                    Choose a request type below. Your approval group
-                    is taken automatically from your employee record.
+                    Choose a request
+                    type below. Your
+                    approval group is
+                    taken automatically
+                    from your employee
+                    record.
                   </p>
                 </div>
               </div>
@@ -923,10 +1654,19 @@ export default function Home() {
               <div className="employeeBox">
                 <div className="between">
                   <div>
-                    <strong>{employee.employeeName}</strong>
+                    <strong>
+                      {
+                        employee.employeeName
+                      }
+                    </strong>
+
                     <div className="small">
-                      {employee.employeeId} •{" "}
-                      {employee.department || "Employee"}
+                      {
+                        employee.employeeId
+                      }{" "}
+                      •{" "}
+                      {employee.department ||
+                        "Employee"}
                     </div>
                   </div>
 
@@ -941,46 +1681,70 @@ export default function Home() {
 
                 <div
                   className="small"
-                  style={{ marginTop: 10 }}
+                  style={{
+                    marginTop: 10,
+                  }}
                 >
                   Approval Group:{" "}
-                  <strong>{employee.leaveApprovalGroup}</strong>
+                  <strong>
+                    {
+                      employee.leaveApprovalGroup
+                    }
+                  </strong>
                 </div>
               </div>
 
               <div
                 className="grid"
-                style={{ marginTop: 18 }}
+                style={{
+                  marginTop: 18,
+                }}
               >
                 <button
                   className="btn btnGhost"
                   type="button"
-                  onClick={() => setRequestType("leave")}
+                  onClick={() =>
+                    setRequestType(
+                      "leave",
+                    )
+                  }
                   style={{
                     minHeight: 110,
-                    textAlign: "left",
+                    textAlign:
+                      "left",
                     padding: 20,
-                    background: "#eef4ff",
-                    border: "1px solid #c7d7fe",
-                    color: "#1849a9",
+                    background:
+                      "#eef4ff",
+                    border:
+                      "1px solid #c7d7fe",
+                    color:
+                      "#1849a9",
                   }}
                 >
                   <span>
                     <strong
                       style={{
-                        display: "block",
+                        display:
+                          "block",
                         fontSize: 18,
                         marginBottom: 6,
                       }}
                     >
                       Leave Request
                     </strong>
+
                     <span
                       className="small"
-                      style={{ color: "#475467" }}
+                      style={{
+                        color:
+                          "#475467",
+                      }}
                     >
-                      File vacation, sick, emergency, and other
-                      available leave types.
+                      File vacation,
+                      sick, emergency,
+                      and other
+                      available leave
+                      types.
                     </span>
                   </span>
                 </button>
@@ -989,32 +1753,45 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() =>
-                    setRequestType("changeOff")
+                    setRequestType(
+                      "changeOff",
+                    )
                   }
                   style={{
                     minHeight: 110,
-                    textAlign: "left",
+                    textAlign:
+                      "left",
                     padding: 20,
-                    background: "#fff7e8",
-                    border: "1px solid #fedf89",
-                    color: "#b54708",
+                    background:
+                      "#fff7e8",
+                    border:
+                      "1px solid #fedf89",
+                    color:
+                      "#b54708",
                   }}
                 >
                   <span>
                     <strong
                       style={{
-                        display: "block",
+                        display:
+                          "block",
                         fontSize: 18,
                         marginBottom: 6,
                       }}
                     >
                       Change Day-Off
                     </strong>
+
                     <span
                       className="small"
-                      style={{ color: "#475467" }}
+                      style={{
+                        color:
+                          "#475467",
+                      }}
                     >
-                      Request a different off-date for the current
+                      Request a
+                      different off-date
+                      for the current
                       week.
                     </span>
                   </span>
@@ -1024,33 +1801,45 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    window.location.href = "/overtime";
+                    window.location.href =
+                      "/overtime";
                   }}
                   style={{
                     minHeight: 110,
-                    textAlign: "left",
+                    textAlign:
+                      "left",
                     padding: 20,
-                    background: "#ecfdf3",
-                    border: "1px solid #abefc6",
-                    color: "#067647",
+                    background:
+                      "#ecfdf3",
+                    border:
+                      "1px solid #abefc6",
+                    color:
+                      "#067647",
                   }}
                 >
                   <span>
                     <strong
                       style={{
-                        display: "block",
+                        display:
+                          "block",
                         fontSize: 18,
                         marginBottom: 6,
                       }}
                     >
                       Overtime
                     </strong>
+
                     <span
                       className="small"
-                      style={{ color: "#475467" }}
+                      style={{
+                        color:
+                          "#475467",
+                      }}
                     >
-                      File overtime hours and select your
-                      compensation method.
+                      File overtime
+                      hours and select
+                      your compensation
+                      method.
                     </span>
                   </span>
                 </button>
@@ -1059,33 +1848,46 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    window.location.href = "/undertime";
+                    window.location.href =
+                      "/undertime";
                   }}
                   style={{
                     minHeight: 110,
-                    textAlign: "left",
+                    textAlign:
+                      "left",
                     padding: 20,
-                    background: "#fff4ed",
-                    border: "1px solid #fed7aa",
-                    color: "#c2410c",
+                    background:
+                      "#fff4ed",
+                    border:
+                      "1px solid #fed7aa",
+                    color:
+                      "#c2410c",
                   }}
                 >
                   <span>
                     <strong
                       style={{
-                        display: "block",
+                        display:
+                          "block",
                         fontSize: 18,
                         marginBottom: 6,
                       }}
                     >
                       Undertime
                     </strong>
+
                     <span
                       className="small"
-                      style={{ color: "#475467" }}
+                      style={{
+                        color:
+                          "#475467",
+                      }}
                     >
-                      Request an earlier time-out and record
-                      the undertime duration.
+                      Request an earlier
+                      time-out and
+                      record the
+                      undertime
+                      duration.
                     </span>
                   </span>
                 </button>
@@ -1094,50 +1896,168 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    setRequestType("history");
-                    setHistoryFilter("All");
-                    void loadHistory();
+                    window.location.href =
+                      "/general-approval";
                   }}
                   style={{
                     minHeight: 110,
-                    textAlign: "left",
+                    textAlign:
+                      "left",
                     padding: 20,
-                    background: "#f4f3ff",
-                    border: "1px solid #d9d6fe",
-                    color: "#5925dc",
+                    background:
+                      "#f8fafc",
+                    border:
+                      "1px solid #d0d5dd",
+                    color:
+                      "#344054",
                   }}
                 >
                   <span>
                     <strong
                       style={{
-                        display: "block",
+                        display:
+                          "block",
                         fontSize: 18,
                         marginBottom: 6,
                       }}
                     >
-                      My Approval History
+                      General Approval
                     </strong>
+
                     <span
                       className="small"
-                      style={{ color: "#475467" }}
+                      style={{
+                        color:
+                          "#475467",
+                      }}
                     >
-                      View your previously filed requests and their
-                      current approval status.
+                      Request approval
+                      for items,
+                      equipment,
+                      purchases,
+                      budgets, or other
+                      business needs.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    window.location.href =
+                      "/offset-approval";
+                  }}
+                  style={{
+                    minHeight: 110,
+                    textAlign:
+                      "left",
+                    padding: 20,
+                    background:
+                      "#f0fdf4",
+                    border:
+                      "1px solid #bbf7d0",
+                    color:
+                      "#166534",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display:
+                          "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      Offset Approval
+                    </strong>
+
+                    <span
+                      className="small"
+                      style={{
+                        color:
+                          "#475467",
+                      }}
+                    >
+                      Request an offset
+                      date for approved
+                      work completed on
+                      a weekend, rest
+                      day, holiday, or
+                      other day.
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  className="btn btnGhost"
+                  type="button"
+                  onClick={() => {
+                    setRequestType(
+                      "history",
+                    );
+                    setHistoryFilter(
+                      "All",
+                    );
+                    void loadHistory();
+                  }}
+                  style={{
+                    minHeight: 110,
+                    textAlign:
+                      "left",
+                    padding: 20,
+                    background:
+                      "#f4f3ff",
+                    border:
+                      "1px solid #d9d6fe",
+                    color:
+                      "#5925dc",
+                  }}
+                >
+                  <span>
+                    <strong
+                      style={{
+                        display:
+                          "block",
+                        fontSize: 18,
+                        marginBottom: 6,
+                      }}
+                    >
+                      My Approval
+                      History
+                    </strong>
+
+                    <span
+                      className="small"
+                      style={{
+                        color:
+                          "#475467",
+                      }}
+                    >
+                      View your
+                      previously filed
+                      requests and their
+                      current approval
+                      status.
                     </span>
                   </span>
                 </button>
               </div>
             </div>
-          ) : requestType === "history" ? (
+          ) : requestType ===
+            "history" ? (
             <div className="card">
               <div className="between">
                 <div>
                   <h2 className="sectionTitle">
                     My Approval History
                   </h2>
+
                   <p className="muted">
-                    Only requests filed under your Employee ID are
-                    shown here.
+                    Only requests filed
+                    under your Employee
+                    ID are shown here.
                   </p>
                 </div>
 
@@ -1145,8 +2065,12 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    setRequestType(null);
-                    setHistoryError("");
+                    setRequestType(
+                      null,
+                    );
+                    setHistoryError(
+                      "",
+                    );
                   }}
                 >
                   Back
@@ -1154,10 +2078,19 @@ export default function Home() {
               </div>
 
               <div className="employeeBox">
-                <strong>{employee.employeeName}</strong>
+                <strong>
+                  {
+                    employee.employeeName
+                  }
+                </strong>
+
                 <div className="small">
-                  {employee.employeeId} •{" "}
-                  {employee.department || "Employee"}
+                  {
+                    employee.employeeId
+                  }{" "}
+                  •{" "}
+                  {employee.department ||
+                    "Employee"}
                 </div>
               </div>
 
@@ -1166,34 +2099,50 @@ export default function Home() {
                 style={{
                   marginTop: 18,
                   marginBottom: 10,
-                  alignItems: "center",
+                  alignItems:
+                    "center",
                 }}
               >
                 <div
                   className="small"
-                  style={{ fontWeight: 700 }}
+                  style={{
+                    fontWeight: 700,
+                  }}
                 >
                   Filter requests
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => void loadHistory()}
-                  disabled={historyLoading}
+                  onClick={() =>
+                    void loadHistory()
+                  }
+                  disabled={
+                    historyLoading
+                  }
                   aria-label="Refresh approval history"
                   style={{
                     border: "none",
-                    background: "transparent",
-                    color: "#475467",
-                    padding: "6px 2px",
+                    background:
+                      "transparent",
+                    color:
+                      "#475467",
+                    padding:
+                      "6px 2px",
                     fontWeight: 700,
                     fontSize: 14,
-                    cursor: historyLoading
-                      ? "default"
-                      : "pointer",
-                    opacity: historyLoading ? 0.6 : 1,
-                    display: "inline-flex",
-                    alignItems: "center",
+                    cursor:
+                      historyLoading
+                        ? "default"
+                        : "pointer",
+                    opacity:
+                      historyLoading
+                        ? 0.6
+                        : 1,
+                    display:
+                      "inline-flex",
+                    alignItems:
+                      "center",
                     gap: 6,
                   }}
                 >
@@ -1202,11 +2151,13 @@ export default function Home() {
                     style={{
                       fontSize: 17,
                       lineHeight: 1,
-                      display: "inline-block",
+                      display:
+                        "inline-block",
                     }}
                   >
                     ↻
                   </span>
+
                   {historyLoading
                     ? "Refreshing…"
                     : "Refresh"}
@@ -1217,7 +2168,8 @@ export default function Home() {
                 className="row"
                 style={{
                   gap: 8,
-                  flexWrap: "wrap",
+                  flexWrap:
+                    "wrap",
                 }}
               >
                 {(
@@ -1227,41 +2179,53 @@ export default function Home() {
                     "Approved",
                     "Rejected",
                   ] as HistoryFilter[]
-                ).map((filter) => (
-                  <button
-                    key={filter}
-                    className={`btn ${
-                      historyFilter === filter
-                        ? "btnPrimary"
-                        : "btnGhost"
-                    }`}
-                    type="button"
-                    onClick={() =>
-                      setHistoryFilter(filter)
-                    }
-                  >
-                    {filter}
-                  </button>
-                ))}
+                ).map(
+                  (filter) => (
+                    <button
+                      key={
+                        filter
+                      }
+                      className={`btn ${
+                        historyFilter ===
+                        filter
+                          ? "btnPrimary"
+                          : "btnGhost"
+                      }`}
+                      type="button"
+                      onClick={() =>
+                        setHistoryFilter(
+                          filter,
+                        )
+                      }
+                    >
+                      {filter}
+                    </button>
+                  ),
+                )}
               </div>
 
               <div className="divider" />
 
               {historyLoading &&
-              historyItems.length === 0 ? (
+              historyItems.length ===
+                0 ? (
                 <div className="muted">
-                  Loading your approval history…
+                  Loading your
+                  approval history…
                 </div>
               ) : historyError ? (
                 <div className="status error">
                   {historyError}
                 </div>
-              ) : filteredHistory.length === 0 ? (
+              ) : filteredHistory.length ===
+                0 ? (
                 <div className="muted">
                   No{" "}
-                  {historyFilter === "All"
+                  {historyFilter ===
+                  "All"
                     ? ""
-                    : historyFilter.toLowerCase() + " "}
+                    : historyFilter.toLowerCase() +
+                      " "}
                   requests found.
                 </div>
               ) : (
@@ -1271,272 +2235,331 @@ export default function Home() {
                     gap: 12,
                   }}
                 >
-                  {filteredHistory.map((item) => (
-                    <div
-                      key={`${item.requestType}-${item.requestId}`}
-                      className="employeeBox"
-                      style={{ margin: 0 }}
-                    >
-                      <div className="between">
-                        <div>
-                          <strong>{item.title}</strong>
-                          <div
-                            className="small"
-                            style={{ marginTop: 4 }}
-                          >
-                            {item.requestType}
-                          </div>
-                        </div>
-
-                        <span
-                          className={`pill ${item.status.toLowerCase()}`}
-                        >
-                          {item.status}
-                        </span>
-                      </div>
-
+                  {filteredHistory.map(
+                    (item) => (
                       <div
-                        className="small"
-                        style={{ marginTop: 12 }}
-                      >
-                        {item.requestType ===
-                        "Leave Request" ? (
-                          <>
-                            {historyDate(
-                              item.startDate,
-                            )}{" "}
-                            →{" "}
-                            {historyDate(item.endDate)}
-                          </>
-                        ) : item.requestType ===
-                          "Overtime" ? (
-                          <>
-                            {historyDate(
-                              item.overtimeDate,
-                            )}
-                            {item.detail
-                              ? ` • ${item.detail}`
-                              : ""}
-                          </>
-                        ) : item.requestType ===
-                          "Undertime" ? (
-                          <>
-                            {historyDate(
-                              item.undertimeDate,
-                            )}
-                            {item.detail
-                              ? ` • ${item.detail}`
-                              : ""}
-                          </>
-                        ) : (
-                          <>
-                            {historyDate(
-                              item.currentOffDate,
-                            )}{" "}
-                            →{" "}
-                            {historyDate(
-                              item.requestedNewOffDate,
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      <div
-                        className="small"
-                        style={{ marginTop: 6 }}
-                      >
-                        Filed:{" "}
-                        {historyDate(item.submittedAt)}
-                      </div>
-
-                      <div
-                        className="small"
-                        style={{ marginTop: 6 }}
-                      >
-                        Request ID:{" "}
-                        <strong>
-                          {item.requestId || "—"}
-                        </strong>
-                      </div>
-
-                      {item.status === "Approved" &&
-                        item.approvalComment && (
-                          <div
-                            className="status success"
-                            style={{
-                              marginTop: 12,
-                              whiteSpace: "pre-wrap",
-                            }}
-                          >
-                            Approval Comment:{" "}
-                            {item.approvalComment}
-                          </div>
-                        )}
-
-                      {item.status === "Rejected" &&
-                        (item.rejectionReason || item.approvalComment) && (
-                          <div
-                            className="status error"
-                            style={{
-                              marginTop: 12,
-                              whiteSpace: "pre-wrap",
-                            }}
-                          >
-                            {item.rejectionReason
-                              ? `Rejection Reason: ${item.rejectionReason}`
-                              : `Rejection Comment: ${item.approvalComment}`}
-                          </div>
-                        )}
-
-                      <div
-                        className="row"
+                        key={`${item.requestType}-${item.requestId}`}
+                        className="employeeBox"
                         style={{
-                          marginTop: 12,
-                          justifyContent: "flex-start",
+                          margin: 0,
                         }}
                       >
-                        <button
-                          className="btn btnGhost"
-                          type="button"
-                          onClick={() => void openHistoryComment(item)}
-                        >
-                          {historyCommentTarget === historyItemKey(item)
-                            ? "Close Comments"
-                            : "Add Comment"}
-                        </button>
-                      </div>
+                        <div className="between">
+                          <div>
+                            <strong>
+                              {
+                                item.title
+                              }
+                            </strong>
 
-                      {historyCommentTarget === historyItemKey(item) && (
-                        <div
-                          style={{
-                            marginTop: 12,
-                            padding: 14,
-                            border: "1px solid #eaecf0",
-                            borderRadius: 12,
-                            background: "#ffffff",
-                          }}
-                        >
-                          <div
-                            className="small"
-                            style={{
-                              fontWeight: 700,
-                              marginBottom: 8,
-                            }}
-                          >
-                            Comments
+                            <div
+                              className="small"
+                              style={{
+                                marginTop: 4,
+                              }}
+                            >
+                              {
+                                item.requestType
+                              }
+                            </div>
                           </div>
 
-                          {historyCommentLoading ? (
-                            <div className="small">Loading comments…</div>
-                          ) : historyComments ? (
-                            <div
-                              className="small"
-                              style={{
-                                whiteSpace: "pre-wrap",
-                                lineHeight: 1.55,
-                                padding: 12,
-                                borderRadius: 10,
-                                background: "#f8fafc",
-                                marginBottom: 12,
-                              }}
-                            >
-                              {historyComments}
-                            </div>
-                          ) : (
-                            <div
-                              className="small"
-                              style={{
-                                color: "#667085",
-                                marginBottom: 12,
-                              }}
-                            >
-                              No comments yet.
-                            </div>
-                          )}
-
-                          <form
-                            onSubmit={(event) =>
-                              void submitHistoryComment(event, item)
-                            }
+                          <span
+                            className={`pill ${item.status.toLowerCase()}`}
                           >
-                            <label className="field">
-                              <span className="label">Add Comment</span>
-                              <textarea
-                                className="textarea"
-                                value={historyCommentText}
-                                onChange={(event) =>
-                                  setHistoryCommentText(event.target.value)
-                                }
-                                placeholder="Write a comment..."
-                              />
-                            </label>
+                            {
+                              item.status
+                            }
+                          </span>
+                        </div>
 
-                            <label className="field">
-                              <span className="label">Attachment</span>
-                              <input
-                                key={historyCommentFileKey}
-                                className="input"
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={(event) =>
-                                  setHistoryCommentAttachment(
-                                    event.target.files?.[0] || null,
-                                  )
-                                }
-                              />
-                              <div
-                                className="small"
-                                style={{ marginTop: 5 }}
-                              >
-                                Optional. Image or PDF, maximum 10 MB.
-                              </div>
-                            </label>
-
-                            <button
-                              className="btn btnPrimary"
-                              type="submit"
-                              disabled={
-                                historyCommentBusy ||
-                                (!historyCommentText.trim() &&
-                                  !historyCommentAttachment)
-                              }
-                              style={{ width: "100%" }}
-                            >
-                              {historyCommentBusy
-                                ? "Sending…"
-                                : "Send Comment"}
-                            </button>
-                          </form>
-
-                          {historyCommentStatus && (
-                            <div
-                              className={`status ${
-                                historyCommentStatus.startsWith("Comment sent")
-                                  ? "success"
-                                  : "error"
-                              }`}
-                              style={{ marginTop: 10 }}
-                            >
-                              {historyCommentStatus}
-                            </div>
+                        <div
+                          className="small"
+                          style={{
+                            marginTop: 12,
+                          }}
+                        >
+                          {historySummary(
+                            item,
                           )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        <div
+                          className="small"
+                          style={{
+                            marginTop: 6,
+                          }}
+                        >
+                          Filed:{" "}
+                          {historyDate(
+                            item.submittedAt,
+                          )}
+                        </div>
+
+                        <div
+                          className="small"
+                          style={{
+                            marginTop: 6,
+                          }}
+                        >
+                          Request ID:{" "}
+                          <strong>
+                            {item.requestId ||
+                              "—"}
+                          </strong>
+                        </div>
+
+                        {item.status ===
+                          "Approved" &&
+                          item.approvalComment && (
+                            <div
+                              className="status success"
+                              style={{
+                                marginTop: 12,
+                                whiteSpace:
+                                  "pre-wrap",
+                              }}
+                            >
+                              Approval
+                              Comment:{" "}
+                              {
+                                item.approvalComment
+                              }
+                            </div>
+                          )}
+
+                        {item.status ===
+                          "Rejected" &&
+                          (item.rejectionReason ||
+                            item.approvalComment) && (
+                            <div
+                              className="status error"
+                              style={{
+                                marginTop: 12,
+                                whiteSpace:
+                                  "pre-wrap",
+                              }}
+                            >
+                              {item.rejectionReason
+                                ? `Rejection Reason: ${item.rejectionReason}`
+                                : `Rejection Comment: ${item.approvalComment}`}
+                            </div>
+                          )}
+
+                        <div
+                          className="row"
+                          style={{
+                            marginTop: 12,
+                            justifyContent:
+                              "flex-start",
+                          }}
+                        >
+                          <button
+                            className="btn btnGhost"
+                            type="button"
+                            onClick={() =>
+                              void openHistoryComment(
+                                item,
+                              )
+                            }
+                          >
+                            {historyCommentTarget ===
+                            historyItemKey(
+                              item,
+                            )
+                              ? "Close Comments"
+                              : "Add Comment"}
+                          </button>
+                        </div>
+
+                        {historyCommentTarget ===
+                          historyItemKey(
+                            item,
+                          ) && (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              padding: 14,
+                              border:
+                                "1px solid #eaecf0",
+                              borderRadius: 12,
+                              background:
+                                "#ffffff",
+                            }}
+                          >
+                            <div
+                              className="small"
+                              style={{
+                                fontWeight: 700,
+                                marginBottom: 8,
+                              }}
+                            >
+                              Comments
+                            </div>
+
+                            {historyCommentLoading ? (
+                              <div className="small">
+                                Loading
+                                comments…
+                              </div>
+                            ) : historyComments ? (
+                              <div
+                                className="small"
+                                style={{
+                                  whiteSpace:
+                                    "pre-wrap",
+                                  lineHeight: 1.55,
+                                  padding: 12,
+                                  borderRadius: 10,
+                                  background:
+                                    "#f8fafc",
+                                  marginBottom: 12,
+                                }}
+                              >
+                                {
+                                  historyComments
+                                }
+                              </div>
+                            ) : (
+                              <div
+                                className="small"
+                                style={{
+                                  color:
+                                    "#667085",
+                                  marginBottom: 12,
+                                }}
+                              >
+                                No comments yet.
+                              </div>
+                            )}
+
+                            <form
+                              onSubmit={(
+                                event,
+                              ) =>
+                                void submitHistoryComment(
+                                  event,
+                                  item,
+                                )
+                              }
+                            >
+                              <label className="field">
+                                <span className="label">
+                                  Add Comment
+                                </span>
+
+                                <textarea
+                                  className="textarea"
+                                  value={
+                                    historyCommentText
+                                  }
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    setHistoryCommentText(
+                                      event.target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder="Write a comment..."
+                                />
+                              </label>
+
+                              <label className="field">
+                                <span className="label">
+                                  Attachment
+                                </span>
+
+                                <input
+                                  key={
+                                    historyCommentFileKey
+                                  }
+                                  className="input"
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    setHistoryCommentAttachment(
+                                      event.target
+                                        .files?.[0] ||
+                                        null,
+                                    )
+                                  }
+                                />
+
+                                <div
+                                  className="small"
+                                  style={{
+                                    marginTop: 5,
+                                  }}
+                                >
+                                  Optional.
+                                  Image or PDF,
+                                  maximum 10
+                                  MB.
+                                </div>
+                              </label>
+
+                              <button
+                                className="btn btnPrimary"
+                                type="submit"
+                                disabled={
+                                  historyCommentBusy ||
+                                  (!historyCommentText.trim() &&
+                                    !historyCommentAttachment)
+                                }
+                                style={{
+                                  width:
+                                    "100%",
+                                }}
+                              >
+                                {historyCommentBusy
+                                  ? "Sending…"
+                                  : "Send Comment"}
+                              </button>
+                            </form>
+
+                            {historyCommentStatus && (
+                              <div
+                                className={`status ${
+                                  historyCommentStatus.startsWith(
+                                    "Comment sent",
+                                  )
+                                    ? "success"
+                                    : "error"
+                                }`}
+                                style={{
+                                  marginTop: 10,
+                                }}
+                              >
+                                {
+                                  historyCommentStatus
+                                }
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  )}
                 </div>
               )}
             </div>
-          ) : requestType === "leave" ? (
+          ) : requestType ===
+            "leave" ? (
             <div className="card">
               <div className="between">
                 <div>
                   <h2 className="sectionTitle">
                     New Leave Request
                   </h2>
+
                   <p className="muted">
-                    Your approval group is automatically taken from
-                    your employee record.
+                    Your approval group
+                    is automatically
+                    taken from your
+                    employee record.
                   </p>
                 </div>
 
@@ -1544,7 +2567,9 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    setRequestType(null);
+                    setRequestType(
+                      null,
+                    );
                     setStatus("");
                   }}
                 >
@@ -1553,46 +2578,86 @@ export default function Home() {
               </div>
 
               <div className="employeeBox">
-                <strong>{employee.employeeName}</strong>
+                <strong>
+                  {
+                    employee.employeeName
+                  }
+                </strong>
+
                 <div className="small">
-                  {employee.employeeId} •{" "}
-                  {employee.department || "Employee"}
+                  {
+                    employee.employeeId
+                  }{" "}
+                  •{" "}
+                  {employee.department ||
+                    "Employee"}
                 </div>
+
                 <div
                   className="small"
-                  style={{ marginTop: 10 }}
+                  style={{
+                    marginTop: 10,
+                  }}
                 >
                   Approval Group:{" "}
                   <strong>
-                    {employee.leaveApprovalGroup}
+                    {
+                      employee.leaveApprovalGroup
+                    }
                   </strong>
                 </div>
               </div>
 
-              <form onSubmit={submitLeave}>
+              <form
+                onSubmit={submitLeave}
+              >
                 <label className="field">
                   <span className="label">
                     Leave Type *
                   </span>
+
                   <select
                     className="select"
-                    value={leaveType}
-                    onChange={(event) =>
-                      setLeaveType(event.target.value)
+                    value={
+                      leaveType
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setLeaveType(
+                        event.target
+                          .value,
+                      )
                     }
                     required
-                    disabled={leaveTypes.length === 0}
+                    disabled={
+                      leaveTypes.length ===
+                      0
+                    }
                   >
-                    {leaveTypes.length === 0 ? (
+                    {leaveTypes.length ===
+                    0 ? (
                       <option value="">
-                        No leave types available
+                        No leave types
+                        available
                       </option>
                     ) : (
-                      leaveTypes.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
-                      ))
+                      leaveTypes.map(
+                        (item) => (
+                          <option
+                            key={
+                              item
+                            }
+                            value={
+                              item
+                            }
+                          >
+                            {
+                              item
+                            }
+                          </option>
+                        ),
+                      )
                     )}
                   </select>
                 </label>
@@ -1600,30 +2665,49 @@ export default function Home() {
                 <div className="grid">
                   <label
                     className="field"
-                    style={{ minWidth: 0 }}
+                    style={{
+                      minWidth: 0,
+                    }}
                   >
                     <span className="label">
                       Start Date *
                     </span>
+
                     <div className="dateInputShell">
                       <div
-                        className={`pickerDisplay ${startDate ? "" : "placeholder"}`}
+                        className={`pickerDisplay ${
+                          startDate
+                            ? ""
+                            : "placeholder"
+                        }`}
                       >
-                        {pickerDateText(startDate)}
+                        {pickerDateText(
+                          startDate,
+                        )}
                       </div>
+
                       <input
                         className="pickerNativeInput"
-                        onClick={(event) => {
+                        onClick={(
+                          event,
+                        ) => {
                           try {
                             event.currentTarget.showPicker?.();
                           } catch {
-                            // Fallback to normal native picker behavior.
+                            // Native fallback.
                           }
                         }}
                         type="date"
-                        value={startDate}
-                        onChange={(event) =>
-                          setStartDate(event.target.value)
+                        value={
+                          startDate
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setStartDate(
+                            event.target
+                              .value,
+                          )
                         }
                         aria-label="Start Date"
                         required
@@ -1633,30 +2717,49 @@ export default function Home() {
 
                   <label
                     className="field"
-                    style={{ minWidth: 0 }}
+                    style={{
+                      minWidth: 0,
+                    }}
                   >
                     <span className="label">
                       End Date *
                     </span>
+
                     <div className="dateInputShell">
                       <div
-                        className={`pickerDisplay ${endDate ? "" : "placeholder"}`}
+                        className={`pickerDisplay ${
+                          endDate
+                            ? ""
+                            : "placeholder"
+                        }`}
                       >
-                        {pickerDateText(endDate)}
+                        {pickerDateText(
+                          endDate,
+                        )}
                       </div>
+
                       <input
                         className="pickerNativeInput"
-                        onClick={(event) => {
+                        onClick={(
+                          event,
+                        ) => {
                           try {
                             event.currentTarget.showPicker?.();
                           } catch {
-                            // Fallback to normal native picker behavior.
+                            // Native fallback.
                           }
                         }}
                         type="date"
-                        value={endDate}
-                        onChange={(event) =>
-                          setEndDate(event.target.value)
+                        value={
+                          endDate
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setEndDate(
+                            event.target
+                              .value,
+                          )
                         }
                         aria-label="End Date"
                         required
@@ -1669,47 +2772,75 @@ export default function Home() {
                   <span className="label">
                     Day Type *
                   </span>
+
                   <select
                     className="select"
-                    value={dayType}
-                    onChange={(event) =>
+                    value={
+                      dayType
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setDayType(
-                        event.target.value as
+                        event.target
+                          .value as
                           | "Full Day"
                           | "Partial Day",
                       )
                     }
                   >
-                    <option>Full Day</option>
-                    <option>Partial Day</option>
+                    <option>
+                      Full Day
+                    </option>
+                    <option>
+                      Partial Day
+                    </option>
                   </select>
                 </label>
 
-                {dayType === "Partial Day" && (
+                {dayType ===
+                  "Partial Day" && (
                   <div className="grid">
                     <label className="field">
                       <span className="label">
                         Start Time *
                       </span>
+
                       <div className="timeInputShell">
                         <div
-                          className={`pickerDisplay ${startTime ? "" : "placeholder"}`}
+                          className={`pickerDisplay ${
+                            startTime
+                              ? ""
+                              : "placeholder"
+                          }`}
                         >
-                          {pickerTimeText(startTime)}
+                          {pickerTimeText(
+                            startTime,
+                          )}
                         </div>
+
                         <input
                           className="pickerNativeInput"
-                        onClick={(event) => {
-                          try {
-                            event.currentTarget.showPicker?.();
-                          } catch {
-                            // Fallback to normal native picker behavior.
-                          }
-                        }}
+                          onClick={(
+                            event,
+                          ) => {
+                            try {
+                              event.currentTarget.showPicker?.();
+                            } catch {
+                              // Native fallback.
+                            }
+                          }}
                           type="time"
-                          value={startTime}
-                          onChange={(event) =>
-                            setStartTime(event.target.value)
+                          value={
+                            startTime
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setStartTime(
+                              event.target
+                                .value,
+                            )
                           }
                           aria-label="Start Time"
                           required
@@ -1721,25 +2852,42 @@ export default function Home() {
                       <span className="label">
                         End Time *
                       </span>
+
                       <div className="timeInputShell">
                         <div
-                          className={`pickerDisplay ${endTime ? "" : "placeholder"}`}
+                          className={`pickerDisplay ${
+                            endTime
+                              ? ""
+                              : "placeholder"
+                          }`}
                         >
-                          {pickerTimeText(endTime)}
+                          {pickerTimeText(
+                            endTime,
+                          )}
                         </div>
+
                         <input
                           className="pickerNativeInput"
-                        onClick={(event) => {
-                          try {
-                            event.currentTarget.showPicker?.();
-                          } catch {
-                            // Fallback to normal native picker behavior.
-                          }
-                        }}
+                          onClick={(
+                            event,
+                          ) => {
+                            try {
+                              event.currentTarget.showPicker?.();
+                            } catch {
+                              // Native fallback.
+                            }
+                          }}
                           type="time"
-                          value={endTime}
-                          onChange={(event) =>
-                            setEndTime(event.target.value)
+                          value={
+                            endTime
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            setEndTime(
+                              event.target
+                                .value,
+                            )
                           }
                           aria-label="End Time"
                           required
@@ -1753,12 +2901,18 @@ export default function Home() {
                   <span className="label">
                     Reason for Leave *
                   </span>
+
                   <textarea
                     className="textarea"
-                    value={leaveReason}
-                    onChange={(event) =>
+                    value={
+                      leaveReason
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setLeaveReason(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="Enter the reason for your leave request"
@@ -1770,63 +2924,96 @@ export default function Home() {
                   <span className="label">
                     Attachment
                   </span>
+
                   <input
                     className="input"
                     type="file"
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setAttachment(
-                        event.target.files?.[0] ||
+                        event.target
+                          .files?.[0] ||
                           null,
                       )
                     }
                   />
+
                   <div
                     className="small"
-                    style={{ marginTop: 5 }}
+                    style={{
+                      marginTop: 5,
+                    }}
                   >
-                    Optional. Maximum 10 MB.
+                    Optional. Maximum
+                    10 MB.
                   </div>
                 </label>
 
-                {contacts.length > 0 && (
+                {contacts.length >
+                  0 && (
                   <div className="field">
                     <span className="label">
                       Notify
                     </span>
+
                     <div className="small">
-                      Optional. Selected people receive a
-                      direct Lark notification only.
+                      Optional.
+                      Selected people
+                      receive a direct
+                      Lark notification
+                      only.
                     </div>
 
                     <div className="checklist">
-                      {contacts.map((contact) => (
-                        <label
-                          className="check"
-                          key={contact.name}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={notify.includes(
-                              contact.name,
-                            )}
-                            onChange={(event) =>
-                              setNotify((previous) =>
-                                event.target.checked
-                                  ? [
-                                      ...previous,
-                                      contact.name,
-                                    ]
-                                  : previous.filter(
-                                      (item) =>
-                                        item !==
-                                        contact.name,
-                                    ),
-                              )
+                      {contacts.map(
+                        (
+                          contact,
+                        ) => (
+                          <label
+                            className="check"
+                            key={
+                              contact.name
                             }
-                          />
-                          <span>{contact.name}</span>
-                        </label>
-                      ))}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={notify.includes(
+                                contact.name,
+                              )}
+                              onChange={(
+                                event,
+                              ) =>
+                                setNotify(
+                                  (
+                                    previous,
+                                  ) =>
+                                    event
+                                      .target
+                                      .checked
+                                      ? [
+                                          ...previous,
+                                          contact.name,
+                                        ]
+                                      : previous.filter(
+                                          (
+                                            item,
+                                          ) =>
+                                            item !==
+                                            contact.name,
+                                        ),
+                                )
+                              }
+                            />
+
+                            <span>
+                              {
+                                contact.name
+                              }
+                            </span>
+                          </label>
+                        ),
+                      )}
                     </div>
                   </div>
                 )}
@@ -1836,7 +3023,9 @@ export default function Home() {
                 <button
                   className="btn btnPrimary"
                   disabled={busy}
-                  style={{ width: "100%" }}
+                  style={{
+                    width: "100%",
+                  }}
                 >
                   {busy
                     ? "Submitting…"
@@ -1847,9 +3036,11 @@ export default function Home() {
               {status && (
                 <div
                   className={`status ${
-                    statusKind === "error"
+                    statusKind ===
+                    "error"
                       ? "error"
-                      : statusKind === "success"
+                      : statusKind ===
+                          "success"
                         ? "success"
                         : ""
                   }`}
@@ -1863,10 +3054,14 @@ export default function Home() {
               <div className="between">
                 <div>
                   <h2 className="sectionTitle">
-                    Change Off-Date Request
+                    Change Off-Date
+                    Request
                   </h2>
+
                   <p className="muted">
-                    Requested new off-date must be within this week.
+                    Requested new
+                    off-date must be
+                    within this week.
                   </p>
                 </div>
 
@@ -1874,7 +3069,9 @@ export default function Home() {
                   className="btn btnGhost"
                   type="button"
                   onClick={() => {
-                    setRequestType(null);
+                    setRequestType(
+                      null,
+                    );
                     setStatus("");
                   }}
                 >
@@ -1883,30 +3080,51 @@ export default function Home() {
               </div>
 
               <div className="employeeBox">
-                <strong>{employee.employeeName}</strong>
+                <strong>
+                  {
+                    employee.employeeName
+                  }
+                </strong>
+
                 <div className="small">
-                  {employee.employeeId} •{" "}
-                  {employee.department || "Employee"}
+                  {
+                    employee.employeeId
+                  }{" "}
+                  •{" "}
+                  {employee.department ||
+                    "Employee"}
                 </div>
+
                 <div
                   className="small"
-                  style={{ marginTop: 10 }}
+                  style={{
+                    marginTop: 10,
+                  }}
                 >
                   Approval Group:{" "}
                   <strong>
-                    {employee.leaveApprovalGroup}
+                    {
+                      employee.leaveApprovalGroup
+                    }
                   </strong>
                 </div>
               </div>
 
-              <form onSubmit={submitChangeOff}>
+              <form
+                onSubmit={
+                  submitChangeOff
+                }
+              >
                 <label className="field">
                   <span className="label">
                     Employee Name
                   </span>
+
                   <input
                     className="input"
-                    value={employee.employeeName}
+                    value={
+                      employee.employeeName
+                    }
                     disabled
                   />
                 </label>
@@ -1914,30 +3132,49 @@ export default function Home() {
                 <div className="grid">
                   <label
                     className="field"
-                    style={{ minWidth: 0 }}
+                    style={{
+                      minWidth: 0,
+                    }}
                   >
                     <span className="label">
                       Current Off-Date *
                     </span>
+
                     <div className="dateInputShell">
                       <div
-                        className={`pickerDisplay ${currentOffDate ? "" : "placeholder"}`}
+                        className={`pickerDisplay ${
+                          currentOffDate
+                            ? ""
+                            : "placeholder"
+                        }`}
                       >
-                        {pickerDateText(currentOffDate)}
+                        {pickerDateText(
+                          currentOffDate,
+                        )}
                       </div>
+
                       <input
                         className="pickerNativeInput"
-                        onClick={(event) => {
+                        onClick={(
+                          event,
+                        ) => {
                           try {
                             event.currentTarget.showPicker?.();
                           } catch {
-                            // Fallback to normal native picker behavior.
+                            // Native fallback.
                           }
                         }}
                         type="date"
-                        value={currentOffDate}
-                        onChange={(event) =>
-                          setCurrentOffDate(event.target.value)
+                        value={
+                          currentOffDate
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setCurrentOffDate(
+                            event.target
+                              .value,
+                          )
                         }
                         aria-label="Current Off-Date"
                         required
@@ -1947,41 +3184,66 @@ export default function Home() {
 
                   <label
                     className="field"
-                    style={{ minWidth: 0 }}
+                    style={{
+                      minWidth: 0,
+                    }}
                   >
                     <span className="label">
-                      Requested New Off-Date *
+                      Requested New
+                      Off-Date *
                     </span>
+
                     <div className="dateInputShell">
                       <div
-                        className={`pickerDisplay ${requestedNewOffDate ? "" : "placeholder"}`}
+                        className={`pickerDisplay ${
+                          requestedNewOffDate
+                            ? ""
+                            : "placeholder"
+                        }`}
                       >
-                        {pickerDateText(requestedNewOffDate)}
+                        {pickerDateText(
+                          requestedNewOffDate,
+                        )}
                       </div>
+
                       <input
                         className="pickerNativeInput"
-                        onClick={(event) => {
+                        onClick={(
+                          event,
+                        ) => {
                           try {
                             event.currentTarget.showPicker?.();
                           } catch {
-                            // Fallback to normal native picker behavior.
+                            // Native fallback.
                           }
                         }}
                         type="date"
-                        value={requestedNewOffDate}
-                        onChange={(event) =>
-                          setRequestedNewOffDate(event.target.value)
+                        value={
+                          requestedNewOffDate
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setRequestedNewOffDate(
+                            event.target
+                              .value,
+                          )
                         }
                         aria-label="Requested New Off-Date"
                         required
                       />
                     </div>
+
                     <div
                       className="small"
-                      style={{ marginTop: 5 }}
+                      style={{
+                        marginTop: 5,
+                      }}
                     >
-                      For this week only:{" "}
-                      {week.start} to {week.end}
+                      For this week
+                      only:{" "}
+                      {week.start} to{" "}
+                      {week.end}
                     </div>
                   </label>
                 </div>
@@ -1990,12 +3252,18 @@ export default function Home() {
                   <span className="label">
                     Reason for Change *
                   </span>
+
                   <textarea
                     className="textarea"
-                    value={changeOffReason}
-                    onChange={(event) =>
+                    value={
+                      changeOffReason
+                    }
+                    onChange={(
+                      event,
+                    ) =>
                       setChangeOffReason(
-                        event.target.value,
+                        event.target
+                          .value,
                       )
                     }
                     placeholder="Enter the reason for changing your off-date"
@@ -2004,22 +3272,33 @@ export default function Home() {
                 </label>
 
                 <label className="field">
-                  <span className="label">Attachment</span>
+                  <span className="label">
+                    Attachment
+                  </span>
+
                   <input
                     className="input"
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       setChangeOffAttachment(
-                        event.target.files?.[0] || null,
+                        event.target
+                          .files?.[0] ||
+                          null,
                       )
                     }
                   />
+
                   <div
                     className="small"
-                    style={{ marginTop: 5 }}
+                    style={{
+                      marginTop: 5,
+                    }}
                   >
-                    Optional. Image or PDF, maximum 10 MB.
+                    Optional. Image or
+                    PDF, maximum 10 MB.
                   </div>
                 </label>
 
@@ -2028,7 +3307,9 @@ export default function Home() {
                 <button
                   className="btn btnPrimary"
                   disabled={busy}
-                  style={{ width: "100%" }}
+                  style={{
+                    width: "100%",
+                  }}
                 >
                   {busy
                     ? "Submitting…"
@@ -2039,9 +3320,11 @@ export default function Home() {
               {status && (
                 <div
                   className={`status ${
-                    statusKind === "error"
+                    statusKind ===
+                    "error"
                       ? "error"
-                      : statusKind === "success"
+                      : statusKind ===
+                          "success"
                         ? "success"
                         : ""
                   }`}
