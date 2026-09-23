@@ -1,12 +1,20 @@
-import { getTenantAccessToken, uploadLeaveAttachment } from "@/lib/lark";
-import { extractApprovalAttachments, uploadApprovalCardImage } from "@/lib/approval-attachments";
+import {
+  getTenantAccessToken,
+  uploadLeaveAttachment,
+} from "@/lib/lark";
+import {
+  extractApprovalAttachments,
+  uploadApprovalCardImage,
+} from "@/lib/approval-attachments";
 import { makeReviewToken } from "@/lib/reviewToken";
 
 export type HistoryCommentRequestType =
   | "Leave Request"
   | "Change Day-Off"
   | "Overtime"
-  | "Undertime";
+  | "Undertime"
+  | "General Approval"
+  | "Offset Approval";
 
 type RequestConfig = {
   tableId: string;
@@ -22,54 +30,133 @@ function baseAppToken() {
   return value;
 }
 
-function configFor(type: HistoryCommentRequestType): RequestConfig {
+function configFor(
+  type: HistoryCommentRequestType,
+): RequestConfig {
   if (type === "Leave Request") {
     const tableId = process.env.LARK_LEAVE_TABLE_ID;
-    if (!tableId) throw new Error("Missing LARK_LEAVE_TABLE_ID");
+    if (!tableId) {
+      throw new Error("Missing LARK_LEAVE_TABLE_ID");
+    }
+
     return {
       tableId,
       requestIdFields: ["Leave Request ID", "Request ID"],
       label: "Leave Request",
       tokenKey: (recordId) => recordId,
-      reviewPath: (recordId) => `/review/${encodeURIComponent(recordId)}`,
+      reviewPath: (recordId) =>
+        `/review/${encodeURIComponent(recordId)}`,
     };
   }
 
   if (type === "Change Day-Off") {
     const tableId = process.env.LARK_CHANGE_OFF_TABLE_ID;
-    if (!tableId) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+    if (!tableId) {
+      throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+    }
+
     return {
       tableId,
-      requestIdFields: ["Change Off Request ID", "Request ID"],
+      requestIdFields: [
+        "Change Off Request ID",
+        "Request ID",
+      ],
       label: "Change Day-Off",
-      tokenKey: (recordId) => `change-off:${recordId}`,
+      tokenKey: (recordId) =>
+        `change-off:${recordId}`,
       reviewPath: (recordId) =>
-        `/review/change-day-off/${encodeURIComponent(recordId)}`,
+        `/review/change-day-off/${encodeURIComponent(
+          recordId,
+        )}`,
     };
   }
 
   if (type === "Overtime") {
     const tableId = process.env.LARK_OVERTIME_TABLE_ID;
-    if (!tableId) throw new Error("Missing LARK_OVERTIME_TABLE_ID");
+    if (!tableId) {
+      throw new Error("Missing LARK_OVERTIME_TABLE_ID");
+    }
+
     return {
       tableId,
-      requestIdFields: ["Overtime Request ID", "Request ID"],
+      requestIdFields: [
+        "Overtime Request ID",
+        "Request ID",
+      ],
       label: "Overtime",
-      tokenKey: (recordId) => `overtime:${recordId}`,
+      tokenKey: (recordId) =>
+        `overtime:${recordId}`,
       reviewPath: (recordId) =>
         `/review/overtime/${encodeURIComponent(recordId)}`,
     };
   }
 
-  const tableId = process.env.LARK_UNDERTIME_TABLE_ID;
-  if (!tableId) throw new Error("Missing LARK_UNDERTIME_TABLE_ID");
+  if (type === "Undertime") {
+    const tableId = process.env.LARK_UNDERTIME_TABLE_ID;
+    if (!tableId) {
+      throw new Error("Missing LARK_UNDERTIME_TABLE_ID");
+    }
+
+    return {
+      tableId,
+      requestIdFields: [
+        "Undertime Request ID",
+        "Request ID",
+      ],
+      label: "Undertime",
+      tokenKey: (recordId) =>
+        `undertime:${recordId}`,
+      reviewPath: (recordId) =>
+        `/review/undertime/${encodeURIComponent(recordId)}`,
+    };
+  }
+
+  if (type === "General Approval") {
+    const tableId =
+      process.env.LARK_GENERAL_APPROVAL_TABLE_ID;
+    if (!tableId) {
+      throw new Error(
+        "Missing LARK_GENERAL_APPROVAL_TABLE_ID",
+      );
+    }
+
+    return {
+      tableId,
+      requestIdFields: [
+        "General Approval Request ID",
+        "Request ID",
+      ],
+      label: "General Approval",
+      tokenKey: (recordId) =>
+        `general-approval:${recordId}`,
+      reviewPath: (recordId) =>
+        `/review/general-approval/${encodeURIComponent(
+          recordId,
+        )}`,
+    };
+  }
+
+  const tableId =
+    process.env.LARK_OFFSET_APPROVAL_TABLE_ID;
+  if (!tableId) {
+    throw new Error(
+      "Missing LARK_OFFSET_APPROVAL_TABLE_ID",
+    );
+  }
+
   return {
     tableId,
-    requestIdFields: ["Undertime Request ID", "Request ID"],
-    label: "Undertime",
-    tokenKey: (recordId) => `undertime:${recordId}`,
+    requestIdFields: [
+      "Offset Request ID",
+      "Request ID",
+    ],
+    label: "Offset Approval",
+    tokenKey: (recordId) =>
+      `offset-approval:${recordId}`,
     reviewPath: (recordId) =>
-      `/review/undertime/${encodeURIComponent(recordId)}`,
+      `/review/offset-approval/${encodeURIComponent(
+        recordId,
+      )}`,
   };
 }
 
@@ -85,6 +172,7 @@ function numberValue(value: unknown) {
 function dateText(value: unknown) {
   const n = numberValue(value);
   if (!n) return "—";
+
   return new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
     month: "short",
@@ -96,6 +184,7 @@ function dateText(value: unknown) {
 function timeText(value: unknown) {
   const n = numberValue(value);
   if (!n) return "—";
+
   return new Intl.DateTimeFormat("en-PH", {
     timeZone: "Asia/Manila",
     hour: "numeric",
@@ -127,16 +216,24 @@ async function listRecords(tableId: string) {
       `https://open.larksuite.com/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
     );
     url.searchParams.set("page_size", "500");
-    if (pageToken) url.searchParams.set("page_token", pageToken);
+    if (pageToken) {
+      url.searchParams.set("page_token", pageToken);
+    }
 
     const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
       cache: "no-store",
     });
     const data = await response.json();
 
     if (!response.ok || data.code !== 0) {
-      throw new Error(`Lark Base read error: ${data.msg || response.statusText}`);
+      throw new Error(
+        `Lark Base read error: ${
+          data.msg || response.statusText
+        }`,
+      );
     }
 
     items.push(...(data.data?.items ?? []));
@@ -162,7 +259,8 @@ async function updateRecord(
       method: "PUT",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json; charset=utf-8",
+        "Content-Type":
+          "application/json; charset=utf-8",
       },
       body: JSON.stringify({ fields }),
       cache: "no-store",
@@ -172,7 +270,11 @@ async function updateRecord(
   const data = await response.json();
 
   if (!response.ok || data.code !== 0) {
-    throw new Error(`Lark Base update error: ${data.msg || response.statusText}`);
+    throw new Error(
+      `Lark Base update error: ${
+        data.msg || response.statusText
+      }`,
+    );
   }
 }
 
@@ -186,14 +288,22 @@ async function findOwnedRecord(input: {
 
   const record = records.find((item: any) => {
     const f = item?.fields ?? {};
-    if (text(f["Employee ID"]) !== input.employeeId) return false;
+
+    if (
+      text(f["Employee ID"]) !== input.employeeId
+    ) {
+      return false;
+    }
+
     return config.requestIdFields.some(
       (name) => text(f[name]) === input.requestId,
     );
   });
 
   if (!record?.record_id) {
-    throw new Error("Request was not found under your Employee ID.");
+    throw new Error(
+      "Request was not found under your Employee ID.",
+    );
   }
 
   return {
@@ -213,7 +323,12 @@ function webhookFor(group: string) {
     process.env[`LARK_APPROVAL_WEBHOOK_${key}`] ||
     process.env[`LARK_LEAVE_WEBHOOK_${key}`];
 
-  if (!value) throw new Error(`Missing approval webhook for group: ${group}`);
+  if (!value) {
+    throw new Error(
+      `Missing approval webhook for group: ${group}`,
+    );
+  }
+
   return value;
 }
 
@@ -224,30 +339,70 @@ function requestDetails(
   if (type === "Leave Request") {
     const start = dateText(f["Start Date"]);
     const end = dateText(f["End Date"]);
+
     return [
       `Leave Type: ${text(f["Leave Type"]) || "—"}`,
-      `Date: ${start}${start !== end ? ` to ${end}` : ""}`,
+      `Date: ${start}${
+        start !== end ? ` to ${end}` : ""
+      }`,
     ].join("\n");
   }
 
   if (type === "Change Day-Off") {
     return [
-      `Current Off-Date: ${dateText(f["Current Off-Date"])}`,
-      `Requested New Off-Date: ${dateText(f["Requested New Off-Date"])}`,
+      `Current Off-Date: ${dateText(
+        f["Current Off-Date"],
+      )}`,
+      `Requested New Off-Date: ${dateText(
+        f["Requested New Off-Date"],
+      )}`,
     ].join("\n");
   }
 
   if (type === "Overtime") {
     return [
-      `Overtime Date: ${dateText(f["Overtime Date"])}`,
-      `Time: ${timeText(f["Start Time"])} – ${timeText(f["End Time"])}`,
+      `Overtime Date: ${dateText(
+        f["Overtime Date"],
+      )}`,
+      `Time: ${timeText(
+        f["Start Time"],
+      )} – ${timeText(f["End Time"])}`,
+    ].join("\n");
+  }
+
+  if (type === "Undertime") {
+    return [
+      `Undertime Date: ${dateText(
+        f["Undertime Date"],
+      )}`,
+      `Requested Early Time Out: ${timeText(
+        f["Requested Early Time Out"],
+      )}`,
+      `Regular Time Out: ${timeText(
+        f["Regular Time Out"],
+      )}`,
+    ].join("\n");
+  }
+
+  if (type === "General Approval") {
+    return [
+      `Category: ${
+        text(f["Request Category"]) || "—"
+      }`,
+      `Request Title: ${
+        text(f["Request Title"]) || "—"
+      }`,
     ].join("\n");
   }
 
   return [
-    `Undertime Date: ${dateText(f["Undertime Date"])}`,
-    `Requested Early Time Out: ${timeText(f["Requested Early Time Out"])}`,
-    `Regular Time Out: ${timeText(f["Regular Time Out"])}`,
+    `Date Worked: ${dateText(f["Date Worked"])}`,
+    `Requested Offset Date: ${dateText(
+      f["Requested Offset Date"],
+    )}`,
+    `Hours Worked: ${
+      text(f["Hours Worked"]) || "—"
+    }`,
   ].join("\n");
 }
 
@@ -261,23 +416,39 @@ async function sendCommentNotification(input: {
   attachmentName?: string;
   attachmentImageKey?: string;
 }) {
-  const group = text(input.fields["Approval Group"]);
-  if (!group) throw new Error("Request is missing Approval Group.");
+  const group = text(
+    input.fields["Approval Group"],
+  );
+
+  if (!group) {
+    throw new Error(
+      "Request is missing Approval Group.",
+    );
+  }
 
   const employeeName =
     text(input.fields["Employee Name"]) ||
     text(input.fields["Employee ID"]) ||
     "Employee";
 
-  const status = text(input.fields["Status"]) || "Pending";
-  const config = configFor(input.requestType);
-  const baseUrl = process.env.APP_PUBLIC_URL;
-  const reviewToken = makeReviewToken(config.tokenKey(input.recordId));
+  const status =
+    text(input.fields["Status"]) || "Pending";
+
+  const config =
+    configFor(input.requestType);
+
+  const baseUrl =
+    process.env.APP_PUBLIC_URL;
+
+  const reviewToken =
+    makeReviewToken(
+      config.tokenKey(input.recordId),
+    );
 
   const viewUrl = baseUrl
-    ? `${baseUrl}${config.reviewPath(input.recordId)}?token=${encodeURIComponent(
-        reviewToken,
-      )}`
+    ? `${baseUrl}${config.reviewPath(
+        input.recordId,
+      )}?token=${encodeURIComponent(reviewToken)}`
     : "";
 
   const elements: any[] = [
@@ -289,7 +460,10 @@ async function sendCommentNotification(input: {
           `**${employeeName} — ${config.label}**\n` +
           `Request ID: ${input.requestId}\n` +
           `Status: **${status}**\n` +
-          `${requestDetails(input.requestType, input.fields)}`,
+          `${requestDetails(
+            input.requestType,
+            input.fields,
+          )}`,
       },
     },
     { tag: "hr" },
@@ -299,7 +473,10 @@ async function sendCommentNotification(input: {
         tag: "lark_md",
         content:
           `**New Comment by ${input.commenterName}**\n` +
-          `${input.comment || "(Attachment added)"}` +
+          `${
+            input.comment ||
+            "(Attachment added)"
+          }` +
           (input.attachmentName
             ? `\n\nAttachment: ${input.attachmentName}`
             : ""),
@@ -313,7 +490,9 @@ async function sendCommentNotification(input: {
       img_key: input.attachmentImageKey,
       alt: {
         tag: "plain_text",
-        content: input.attachmentName || "Comment attachment",
+        content:
+          input.attachmentName ||
+          "Comment attachment",
       },
       mode: "fit_horizontal",
       compact_width: true,
@@ -327,7 +506,10 @@ async function sendCommentNotification(input: {
       actions: [
         {
           tag: "button",
-          text: { tag: "plain_text", content: "View Request" },
+          text: {
+            tag: "plain_text",
+            content: "View Request",
+          },
           type: "primary",
           multi_url: {
             url: viewUrl,
@@ -340,33 +522,49 @@ async function sendCommentNotification(input: {
     });
   }
 
-  const response = await fetch(webhookFor(group), {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify({
-      msg_type: "interactive",
-      card: {
-        config: { wide_screen_mode: true, enable_forward: true },
-        header: {
-          template: "blue",
-          title: {
-            tag: "plain_text",
-            content: `New Comment — ${config.label}`,
-          },
-        },
-        elements,
+  const response = await fetch(
+    webhookFor(group),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json; charset=utf-8",
       },
-    }),
-    cache: "no-store",
-  });
+      body: JSON.stringify({
+        msg_type: "interactive",
+        card: {
+          config: {
+            wide_screen_mode: true,
+            enable_forward: true,
+          },
+          header: {
+            template: "blue",
+            title: {
+              tag: "plain_text",
+              content: `New Comment — ${config.label}`,
+            },
+          },
+          elements,
+        },
+      }),
+      cache: "no-store",
+    },
+  );
 
-  const data = await response.json().catch(() => null);
+  const data =
+    await response.json().catch(() => null);
 
   if (
     !response.ok ||
-    (data && typeof data.code === "number" && data.code !== 0)
+    (data &&
+      typeof data.code === "number" &&
+      data.code !== 0)
   ) {
-    throw new Error(`Lark webhook error: ${data?.msg || response.statusText}`);
+    throw new Error(
+      `Lark webhook error: ${
+        data?.msg || response.statusText
+      }`,
+    );
   }
 }
 
@@ -375,10 +573,15 @@ export async function getHistoryComments(input: {
   requestId: string;
   employeeId: string;
 }) {
-  const found = await findOwnedRecord(input);
+  const found =
+    await findOwnedRecord(input);
+
   return {
-    comments: text(found.fields["Comments"]),
-    status: text(found.fields["Status"]) || "Pending",
+    comments:
+      text(found.fields["Comments"]),
+    status:
+      text(found.fields["Status"]) ||
+      "Pending",
   };
 }
 
@@ -390,45 +593,88 @@ export async function addHistoryComment(input: {
   comment: string;
   attachment?: File;
 }) {
-  const found = await findOwnedRecord(input);
-  const previousComments = text(found.fields["Comments"]);
-  const previousAttachments = extractApprovalAttachments(
-    found.fields["Attachment"],
-  );
+  const found =
+    await findOwnedRecord(input);
+
+  const previousComments =
+    text(found.fields["Comments"]);
+
+  const previousAttachments =
+    extractApprovalAttachments(
+      found.fields["Attachment"],
+    );
 
   let attachmentToken = "";
   let attachmentImageKey = "";
   let attachmentName = "";
 
-  if (input.attachment && input.attachment.size > 0) {
-    if (input.attachment.size > 10 * 1024 * 1024) {
-      throw new Error("Comment attachment must be 10 MB or smaller.");
+  if (
+    input.attachment &&
+    input.attachment.size > 0
+  ) {
+    if (
+      input.attachment.size >
+      10 * 1024 * 1024
+    ) {
+      throw new Error(
+        "Comment attachment must be 10 MB or smaller.",
+      );
     }
 
-    attachmentName = input.attachment.name || "Comment attachment";
-    attachmentToken = await uploadLeaveAttachment(input.attachment);
+    attachmentName =
+      input.attachment.name ||
+      "Comment attachment";
 
-    if (input.attachment.type.toLowerCase().startsWith("image/")) {
+    attachmentToken =
+      await uploadLeaveAttachment(
+        input.attachment,
+      );
+
+    if (
+      input.attachment.type
+        .toLowerCase()
+        .startsWith("image/")
+    ) {
       try {
-        attachmentImageKey = (await uploadApprovalCardImage(input.attachment)) || "";
+        attachmentImageKey =
+          (await uploadApprovalCardImage(
+            input.attachment,
+          )) || "";
       } catch (error) {
-        console.error("Comment card image upload failed:", error);
+        console.error(
+          "Comment card image upload failed:",
+          error,
+        );
       }
     }
   }
 
   const now = Date.now();
-  const entryParts = [`${filedText(now)} — ${input.commenterName}`];
 
-  if (input.comment) entryParts.push(input.comment);
-  if (attachmentName) entryParts.push(`Attachment: ${attachmentName}`);
+  const entryParts = [
+    `${filedText(now)} — ${input.commenterName}`,
+  ];
+
+  if (input.comment) {
+    entryParts.push(input.comment);
+  }
+
+  if (attachmentName) {
+    entryParts.push(
+      `Attachment: ${attachmentName}`,
+    );
+  }
 
   const entry = entryParts.join("\n");
-  const comments = previousComments
-    ? `${previousComments}\n\n${entry}`
-    : entry;
 
-  const fields: Record<string, unknown> = { Comments: comments };
+  const comments =
+    previousComments
+      ? `${previousComments}\n\n${entry}`
+      : entry;
+
+  const fields: Record<string, unknown> = {
+    Comments: comments,
+  };
 
   if (attachmentToken) {
     const allTokens = [
@@ -438,12 +684,17 @@ export async function addHistoryComment(input: {
       attachmentToken,
     ];
 
-    fields.Attachment = allTokens.map((fileToken) => ({
-      file_token: fileToken,
-    }));
+    fields.Attachment =
+      allTokens.map((fileToken) => ({
+        file_token: fileToken,
+      }));
   }
 
-  await updateRecord(found.config.tableId, found.recordId, fields);
+  await updateRecord(
+    found.config.tableId,
+    found.recordId,
+    fields,
+  );
 
   const warnings: string[] = [];
 
@@ -452,11 +703,16 @@ export async function addHistoryComment(input: {
       requestType: input.requestType,
       requestId: input.requestId,
       recordId: found.recordId,
-      fields: { ...found.fields, Comments: comments },
+      fields: {
+        ...found.fields,
+        Comments: comments,
+      },
       comment: input.comment,
       commenterName: input.commenterName,
-      attachmentName: attachmentName || undefined,
-      attachmentImageKey: attachmentImageKey || undefined,
+      attachmentName:
+        attachmentName || undefined,
+      attachmentImageKey:
+        attachmentImageKey || undefined,
     });
   } catch (error) {
     warnings.push(
