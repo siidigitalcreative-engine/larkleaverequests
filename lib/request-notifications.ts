@@ -50,11 +50,31 @@ type UndertimeInput = BaseInput & {
   reason: string;
 };
 
+type GeneralApprovalInput = BaseInput & {
+  requestType: "General Approval";
+  requestCategory: string;
+  requestTitle: string;
+  requestDetails: string;
+  amountBudget?: number;
+  reason: string;
+};
+
+type OffsetApprovalInput = BaseInput & {
+  requestType: "Offset Approval";
+  dateWorked: string;
+  workType: string;
+  requestedOffsetDate: string;
+  hoursWorked: number;
+  reason: string;
+};
+
 export type CentralRequestNotificationInput =
   | LeaveInput
   | ChangeOffInput
   | OvertimeInput
-  | UndertimeInput;
+  | UndertimeInput
+  | GeneralApprovalInput
+  | OffsetApprovalInput;
 
 function baseAppToken() {
   const value = process.env.LARK_BASE_APP_TOKEN;
@@ -126,7 +146,6 @@ function attendanceGroups(value: unknown): string[] {
   return Array.from(new Set(results));
 }
 
-
 async function employeeAttendanceGroups(employeeId: string) {
   const token = await getTenantAccessToken();
   const appToken = baseAppToken();
@@ -180,9 +199,6 @@ function shouldSend(groups: string[], approvalGroup: string) {
 
   if (attendanceMatch) return true;
 
-  // Fallback for Employees tables where Attendance Group is a linked/lookup
-  // field and Lark returns record IDs instead of the visible option text.
-  // These are the current Office approval groups, plus Warehouse.
   const allowedApprovalGroups = new Set([
     "digital creative",
     "sales",
@@ -230,7 +246,9 @@ function timeText(time?: string) {
   const hour = Number(hourText);
   const minute = Number(minuteText);
 
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return time;
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return time;
+  }
 
   const d = new Date(Date.UTC(2026, 0, 1, hour, minute));
   return new Intl.DateTimeFormat("en-PH", {
@@ -243,7 +261,7 @@ function timeText(time?: string) {
 
 function detailText(input: CentralRequestNotificationInput) {
   if (input.requestType === "Leave") {
-    const lines = [
+    return [
       `**Leave Type**\n${input.leaveType}`,
       `**Day Type**\n${input.dayType}`,
       `**Start**\n${dateText(input.startDate)}${
@@ -257,7 +275,6 @@ function detailText(input: CentralRequestNotificationInput) {
           : ""
       }`,
     ];
-    return lines;
   }
 
   if (input.requestType === "Change Day-Off") {
@@ -278,12 +295,47 @@ function detailText(input: CentralRequestNotificationInput) {
     ];
   }
 
+  if (input.requestType === "Undertime") {
+    return [
+      `**Undertime Date**\n${dateText(input.undertimeDate)}`,
+      `**Requested Early Time Out**\n${timeText(input.requestedEarlyTimeOut)}`,
+      `**Regular Time Out**\n${timeText(input.regularTimeOut)}`,
+      `**Duration**\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
+    ];
+  }
+
+  if (input.requestType === "General Approval") {
+    return [
+      `**Category**\n${input.requestCategory}`,
+      `**Request Title**\n${input.requestTitle}`,
+      ...(input.amountBudget && input.amountBudget > 0
+        ? [
+            `**Amount / Budget**\n₱${input.amountBudget.toLocaleString(
+              "en-PH",
+              {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              },
+            )}`,
+          ]
+        : []),
+    ];
+  }
+
   return [
-    `**Undertime Date**\n${dateText(input.undertimeDate)}`,
-    `**Requested Early Time Out**\n${timeText(input.requestedEarlyTimeOut)}`,
-    `**Regular Time Out**\n${timeText(input.regularTimeOut)}`,
-    `**Duration**\n${input.durationHours} hour${input.durationHours === 1 ? "" : "s"}`,
+    `**Date Worked**\n${dateText(input.dateWorked)}`,
+    `**Work Type**\n${input.workType}`,
+    `**Requested Offset Date**\n${dateText(input.requestedOffsetDate)}`,
+    `**Hours Worked**\n${input.hoursWorked}`,
   ];
+}
+
+function reasonHeading(input: CentralRequestNotificationInput) {
+  return input.requestType === "General Approval"
+    ? "Request Details"
+    : input.requestType === "Offset Approval"
+      ? "Reason / Work Details"
+      : "Reason";
 }
 
 export async function sendCentralRequestNotification(
@@ -335,7 +387,7 @@ export async function sendCentralRequestNotification(
       tag: "div",
       text: {
         tag: "lark_md",
-        content: `**Reason**\n${input.reason}`,
+        content: `**${reasonHeading(input)}**\n${input.reason}`,
       },
     },
   ];
@@ -381,7 +433,9 @@ export async function sendCentralRequestNotification(
 
   const response = await fetch(webhook(), {
     method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+    },
     body: JSON.stringify({
       msg_type: "interactive",
       card: {
