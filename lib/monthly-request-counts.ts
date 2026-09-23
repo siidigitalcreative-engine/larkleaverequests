@@ -7,6 +7,7 @@ export type MonthlyRequestCounts = {
   overtime: number;
   undertime: number;
   changeDayOff: number;
+  offsetApproval: number;
 };
 
 function appToken() {
@@ -46,9 +47,7 @@ async function listMonthlyEmployeeRecords(
     }
 
     const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
 
@@ -121,9 +120,15 @@ async function countLeaveBreakdown(
       .trim()
       .toLowerCase();
 
-    if (dayType === "partial day" || dayType.includes("partial")) {
+    if (
+      dayType === "partial day" ||
+      dayType.includes("partial")
+    ) {
       partialDay += 1;
-    } else if (dayType === "full day" || dayType.includes("full")) {
+    } else if (
+      dayType === "full day" ||
+      dayType.includes("full")
+    ) {
       fullDay += 1;
     }
   }
@@ -144,11 +149,9 @@ export async function getMonthlyRequestCounts(
     overtime,
     undertime,
     changeDayOff,
+    offsetApproval,
   ] = await Promise.all([
-    countLeaveBreakdown(
-      employeeId,
-      submittedAt,
-    ),
+    countLeaveBreakdown(employeeId, submittedAt),
     countInTable(
       process.env.LARK_OVERTIME_TABLE_ID,
       employeeId,
@@ -164,6 +167,11 @@ export async function getMonthlyRequestCounts(
       employeeId,
       submittedAt,
     ),
+    countInTable(
+      process.env.LARK_OFFSET_APPROVAL_TABLE_ID,
+      employeeId,
+      submittedAt,
+    ),
   ]);
 
   return {
@@ -173,6 +181,7 @@ export async function getMonthlyRequestCounts(
     overtime,
     undertime,
     changeDayOff,
+    offsetApproval,
   };
 }
 
@@ -191,6 +200,9 @@ export function monthlyRequestCountLines(
       : "",
     counts.changeDayOff > 0
       ? `**Change Day-Off Filed This Month: ${counts.changeDayOff}**`
+      : "",
+    counts.offsetApproval > 0
+      ? `**Offset Approval Filed This Month: ${counts.offsetApproval}**`
       : "",
   ]
     .filter(Boolean)
