@@ -4,7 +4,13 @@ import { getTenantAccessToken } from "@/lib/lark";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type SourceType = "leave" | "overtime" | "undertime" | "change-off";
+type SourceType =
+  | "leave"
+  | "overtime"
+  | "undertime"
+  | "change-off"
+  | "general-approval"
+  | "offset-approval";
 
 function tableIdForSource(source: SourceType) {
   if (source === "leave") {
@@ -25,8 +31,30 @@ function tableIdForSource(source: SourceType) {
     return value;
   }
 
-  const value = process.env.LARK_CHANGE_OFF_TABLE_ID;
-  if (!value) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+  if (source === "change-off") {
+    const value = process.env.LARK_CHANGE_OFF_TABLE_ID;
+    if (!value) throw new Error("Missing LARK_CHANGE_OFF_TABLE_ID");
+    return value;
+  }
+
+  if (source === "general-approval") {
+    const value =
+      process.env.LARK_GENERAL_APPROVAL_TABLE_ID;
+    if (!value) {
+      throw new Error(
+        "Missing LARK_GENERAL_APPROVAL_TABLE_ID",
+      );
+    }
+    return value;
+  }
+
+  const value =
+    process.env.LARK_OFFSET_APPROVAL_TABLE_ID;
+  if (!value) {
+    throw new Error(
+      "Missing LARK_OFFSET_APPROVAL_TABLE_ID",
+    );
+  }
   return value;
 }
 
@@ -110,12 +138,16 @@ export async function GET(
       url.searchParams.get("source") || "",
     ).trim();
 
-    if (
-      sourceRaw !== "leave" &&
-      sourceRaw !== "overtime" &&
-      sourceRaw !== "undertime" &&
-      sourceRaw !== "change-off"
-    ) {
+    const validSources: SourceType[] = [
+      "leave",
+      "overtime",
+      "undertime",
+      "change-off",
+      "general-approval",
+      "offset-approval",
+    ];
+
+    if (!validSources.includes(sourceRaw as SourceType)) {
       return NextResponse.json(
         { error: "Missing or invalid attachment source." },
         { status: 400 },
@@ -168,7 +200,6 @@ export async function GET(
       )}/download`,
     );
 
-    // Required for Base attachments when advanced permissions are enabled.
     downloadUrl.searchParams.set("extra", extra);
 
     const response = await fetch(downloadUrl, {
@@ -202,7 +233,6 @@ export async function GET(
 
     const upstreamType =
       response.headers.get("content-type") || "";
-
     const inferredType = contentTypeFromName(fileName);
 
     const contentType =
@@ -216,7 +246,6 @@ export async function GET(
       fileName.replace(/[\r\n"]/g, "") || "attachment";
 
     const headers = new Headers();
-
     headers.set("Content-Type", contentType);
     headers.set(
       "Content-Disposition",
