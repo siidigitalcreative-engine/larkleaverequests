@@ -143,10 +143,10 @@ export default function GeneralApprovalPage() {
       if (
         attachment &&
         attachment.size >
-          10 * 1024 * 1024
+          30 * 1024 * 1024
       ) {
         throw new Error(
-          "Attachment must be 10 MB or smaller.",
+          "Attachment must be 30 MB or smaller.",
         );
       }
 
@@ -650,7 +650,7 @@ export default function GeneralApprovalPage() {
                     event.currentTarget.value =
                       "";
                     setStatus(
-                      "Attachment must be 10 MB or smaller.",
+                      "Attachment must be 30 MB or smaller.",
                     );
                     setStatusKind(
                       "error",
@@ -673,7 +673,7 @@ export default function GeneralApprovalPage() {
                 Optional. Image, PDF,
                 Word, Excel,
                 PowerPoint, or text
-                file. Maximum 10 MB.
+                file. Maximum 30 MB.
               </div>
             </label>
 
