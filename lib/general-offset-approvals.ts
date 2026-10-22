@@ -440,6 +440,13 @@ export async function sendGeneralApprovalCard(
   if (!baseUrl) throw new Error("Missing APP_PUBLIC_URL");
   const approveUrl = `${baseUrl}/review/general-approval/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=approve`;
   const rejectUrl = `${baseUrl}/review/general-approval/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=reject`;
+  const attachmentUrl =
+    input.attachmentToken && input.attachmentName
+      ? `${baseUrl}/api/attachment/${encodeURIComponent(input.attachmentToken)}` +
+        `?source=general-approval` +
+        `&recordId=${encodeURIComponent(input.recordId)}` +
+        `&name=${encodeURIComponent(input.attachmentName)}`
+      : "";
   const monthlyCountLines = monthlyRequestCountLines(await getMonthlyRequestCounts(input.employeeId, input.submittedAt));
 
   const elements: any[] = [
@@ -464,8 +471,18 @@ export async function sendGeneralApprovalCard(
     alt: { tag: "plain_text", content: input.attachmentName || "General Approval attachment" },
     compact_width: true, preview: true,
   });
-  else if (input.attachmentName) elements.push({
-    tag: "div", text: { tag: "lark_md", content: `**Attachment**\n${input.attachmentName}` },
+  else if (
+    input.attachmentToken &&
+    input.attachmentName &&
+    attachmentUrl
+  ) elements.push({
+    tag: "div",
+    text: {
+      tag: "lark_md",
+      content:
+        `**Attachment**\n` +
+        `[📎 ${input.attachmentName}](${attachmentUrl})`,
+    },
   });
 
   elements.push({ tag: "action", actions: [
@@ -487,6 +504,13 @@ export async function sendOffsetApprovalCard(
   if (!baseUrl) throw new Error("Missing APP_PUBLIC_URL");
   const approveUrl = `${baseUrl}/review/offset-approval/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=approve`;
   const rejectUrl = `${baseUrl}/review/offset-approval/${encodeURIComponent(input.recordId)}?token=${encodeURIComponent(input.reviewToken)}&decision=reject`;
+  const attachmentUrl =
+    input.attachmentToken && input.attachmentName
+      ? `${baseUrl}/api/attachment/${encodeURIComponent(input.attachmentToken)}` +
+        `?source=offset-approval` +
+        `&recordId=${encodeURIComponent(input.recordId)}` +
+        `&name=${encodeURIComponent(input.attachmentName)}`
+      : "";
   const monthlyCountLines = monthlyRequestCountLines(await getMonthlyRequestCounts(input.employeeId, input.submittedAt));
 
   const elements: any[] = [
@@ -509,8 +533,18 @@ export async function sendOffsetApprovalCard(
     alt: { tag: "plain_text", content: input.attachmentName || "Offset Approval attachment" },
     compact_width: true, preview: true,
   });
-  else if (input.attachmentName) elements.push({
-    tag: "div", text: { tag: "lark_md", content: `**Attachment**\n${input.attachmentName}` },
+  else if (
+    input.attachmentToken &&
+    input.attachmentName &&
+    attachmentUrl
+  ) elements.push({
+    tag: "div",
+    text: {
+      tag: "lark_md",
+      content:
+        `**Attachment**\n` +
+        `[📎 ${input.attachmentName}](${attachmentUrl})`,
+    },
   });
 
   elements.push({ tag: "action", actions: [
