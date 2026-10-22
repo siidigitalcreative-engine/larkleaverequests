@@ -11,7 +11,7 @@ import {
 
 export const runtime = "nodejs";
 
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024;
 
 export async function POST(
   request: Request,
