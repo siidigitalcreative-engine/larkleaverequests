@@ -1,6 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+import { upload } from "@vercel/blob/client";
 
 type Employee = {
   employeeId: string;
@@ -16,54 +21,231 @@ type Category =
   | "Budget Request"
   | "Other";
 
+async function readJsonSafely(
+  response: Response,
+) {
+  const text =
+    await response.text();
+
+  try {
+    return text
+      ? JSON.parse(text)
+      : {};
+  } catch {
+    return {
+      error:
+        response.status === 413
+          ? "The request was too large. Please try again."
+          : text ||
+            "Unexpected server response.",
+    };
+  }
+}
+
 export default function GeneralApprovalPage() {
-  const [loading, setLoading] = useState(true);
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [requestCategory, setRequestCategory] =
-    useState<Category>("Item Release");
-  const [requestTitle, setRequestTitle] = useState("");
-  const [requestDetails, setRequestDetails] = useState("");
-  const [amountBudget, setAmountBudget] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] =
-    useState<"normal" | "error" | "success">("normal");
-  const [submittedId, setSubmittedId] = useState("");
-  const [actualApprovalGroup, setActualApprovalGroup] =
+  const [loading, setLoading] =
+    useState(true);
+  const [employee, setEmployee] =
+    useState<Employee | null>(
+      null,
+    );
+  const [
+    requestCategory,
+    setRequestCategory,
+  ] =
+    useState<Category>(
+      "Item Release",
+    );
+  const [
+    requestTitle,
+    setRequestTitle,
+  ] = useState("");
+  const [
+    requestDetails,
+    setRequestDetails,
+  ] = useState("");
+  const [
+    amountBudget,
+    setAmountBudget,
+  ] = useState("");
+  const [
+    attachment,
+    setAttachment,
+  ] =
+    useState<File | null>(
+      null,
+    );
+  const [
+    uploadProgress,
+    setUploadProgress,
+  ] = useState(0);
+  const [busy, setBusy] =
+    useState(false);
+  const [status, setStatus] =
     useState("");
+  const [
+    statusKind,
+    setStatusKind,
+  ] = useState<
+    | "normal"
+    | "error"
+    | "success"
+  >("normal");
+  const [
+    submittedId,
+    setSubmittedId,
+  ] = useState("");
+  const [
+    actualApprovalGroup,
+    setActualApprovalGroup,
+  ] = useState("");
 
   useEffect(() => {
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then((response) => response.json())
+    fetch("/api/auth/session", {
+      cache: "no-store",
+    })
+      .then((response) =>
+        response.json(),
+      )
       .then((data) => {
-        if (data.authenticated) setEmployee(data.employee);
+        if (data.authenticated) {
+          setEmployee(
+            data.employee,
+          );
+        }
       })
       .catch(() => {
-        setStatus("Unable to load your signed-in session.");
+        setStatus(
+          "Unable to load your signed-in session.",
+        );
         setStatusKind("error");
       })
-      .finally(() => setLoading(false));
+      .finally(() =>
+        setLoading(false),
+      );
   }, []);
 
-  async function submit(event: FormEvent) {
+  async function submit(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setStatus("");
+    setUploadProgress(0);
 
     try {
-      const form = new FormData();
-      form.set("requestCategory", requestCategory);
-      form.set("requestTitle", requestTitle);
-      form.set("requestDetails", requestDetails);
-      form.set("amountBudget", amountBudget);
-      if (attachment) form.set("attachment", attachment);
+      if (!employee) {
+        throw new Error(
+          "Please verify your identity again.",
+        );
+      }
 
-      const response = await fetch("/api/general-approval", {
-        method: "POST",
-        body: form,
-      });
-      const data = await response.json();
+      if (
+        attachment &&
+        attachment.size >
+          10 * 1024 * 1024
+      ) {
+        throw new Error(
+          "Attachment must be 10 MB or smaller.",
+        );
+      }
+
+      let blobPathname = "";
+      let attachmentName = "";
+      let attachmentType = "";
+
+      if (attachment) {
+        setStatus(
+          "Uploading attachment…",
+        );
+        setStatusKind(
+          "normal",
+        );
+
+        const blob =
+          await upload(
+            `approvals-temp/${employee.employeeId}/${Date.now()}-${attachment.name}`,
+            attachment,
+            {
+              access: "private",
+              handleUploadUrl:
+                "/api/approval-attachment-upload",
+              multipart: true,
+              onUploadProgress: (
+                progress,
+              ) => {
+                setUploadProgress(
+                  Math.round(
+                    progress.percentage,
+                  ),
+                );
+              },
+            },
+          );
+
+        blobPathname =
+          blob.pathname;
+        attachmentName =
+          attachment.name;
+        attachmentType =
+          attachment.type ||
+          blob.contentType ||
+          "application/octet-stream";
+      }
+
+      setStatus(
+        "Submitting General Approval…",
+      );
+      setStatusKind("normal");
+
+      const form =
+        new FormData();
+
+      form.set(
+        "requestCategory",
+        requestCategory,
+      );
+      form.set(
+        "requestTitle",
+        requestTitle,
+      );
+      form.set(
+        "requestDetails",
+        requestDetails,
+      );
+      form.set(
+        "amountBudget",
+        amountBudget,
+      );
+
+      if (blobPathname) {
+        form.set(
+          "attachmentBlobPathname",
+          blobPathname,
+        );
+        form.set(
+          "attachmentName",
+          attachmentName,
+        );
+        form.set(
+          "attachmentType",
+          attachmentType,
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/general-approval",
+          {
+            method: "POST",
+            body: form,
+          },
+        );
+
+      const data =
+        await readJsonSafely(
+          response,
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -72,25 +254,32 @@ export default function GeneralApprovalPage() {
         );
       }
 
-      setSubmittedId(data.requestId);
+      setSubmittedId(
+        data.requestId,
+      );
       setActualApprovalGroup(
         data.approvalGroup ||
-          employee?.leaveApprovalGroup ||
+          employee.leaveApprovalGroup ||
           "",
       );
       setStatus(
         "General Approval request submitted for approval.",
       );
-      setStatusKind("success");
+      setStatusKind(
+        "success",
+      );
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
           : "Unable to submit General Approval request.",
       );
-      setStatusKind("error");
+      setStatusKind(
+        "error",
+      );
     } finally {
       setBusy(false);
+      setUploadProgress(0);
     }
   }
 
@@ -98,7 +287,10 @@ export default function GeneralApprovalPage() {
     return (
       <main className="shell">
         <div className="wrap">
-          <div className="card">Loading General Approval…</div>
+          <div className="card">
+            Loading General
+            Approval…
+          </div>
         </div>
       </main>
     );
@@ -109,24 +301,35 @@ export default function GeneralApprovalPage() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
             <div>
               <h1>Approvals</h1>
-              <p>General Approval request</p>
+              <p>
+                General Approval
+                request
+              </p>
             </div>
           </div>
 
           <div className="card">
-            <h2 className="sectionTitle">Sign in first</h2>
+            <h2 className="sectionTitle">
+              Sign in first
+            </h2>
             <p className="muted">
-              Please verify your identity from the main
-              Approvals page before filing a General Approval.
+              Please verify your
+              identity from the main
+              Approvals page before
+              filing a General
+              Approval.
             </p>
             <button
               className="btn btnPrimary"
               type="button"
               onClick={() => {
-                window.location.href = "/";
+                window.location.href =
+                  "/";
               }}
             >
               Go to Approvals
@@ -142,20 +345,31 @@ export default function GeneralApprovalPage() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
             <div>
               <h1>Approvals</h1>
-              <p>General Approval request</p>
+              <p>
+                General Approval
+                request
+              </p>
             </div>
           </div>
 
           <div className="card successPanel">
-            <div className="successIcon">✓</div>
+            <div className="successIcon">
+              ✓
+            </div>
+
             <h2 className="sectionTitle">
-              General Approval submitted
+              General Approval
+              submitted
             </h2>
+
             <p className="muted">
-              Your request has been sent to the{" "}
+              Your request has been
+              sent to the{" "}
               <strong>
                 {actualApprovalGroup ||
                   employee.leaveApprovalGroup}
@@ -165,15 +379,23 @@ export default function GeneralApprovalPage() {
 
             <div
               className="status success"
-              style={{ margin: "18px auto", maxWidth: 440 }}
+              style={{
+                margin:
+                  "18px auto",
+                maxWidth: 440,
+              }}
             >
-              Request ID: <strong>{submittedId}</strong>
+              Request ID:{" "}
+              <strong>
+                {submittedId}
+              </strong>
             </div>
 
             <div
               className="row"
               style={{
-                justifyContent: "center",
+                justifyContent:
+                  "center",
                 marginTop: 18,
               }}
             >
@@ -182,7 +404,9 @@ export default function GeneralApprovalPage() {
                 type="button"
                 onClick={() => {
                   setSubmittedId("");
-                  setRequestCategory("Item Release");
+                  setRequestCategory(
+                    "Item Release",
+                  );
                   setRequestTitle("");
                   setRequestDetails("");
                   setAmountBudget("");
@@ -190,14 +414,16 @@ export default function GeneralApprovalPage() {
                   setStatus("");
                 }}
               >
-                File another General Approval
+                File another General
+                Approval
               </button>
 
               <button
                 className="btn btnGhost"
                 type="button"
                 onClick={() => {
-                  window.location.href = "/";
+                  window.location.href =
+                    "/";
                 }}
               >
                 Back to Approvals
@@ -213,10 +439,15 @@ export default function GeneralApprovalPage() {
     <main className="shell">
       <div className="wrap">
         <div className="brand">
-          <div className="brandMark">A</div>
+          <div className="brandMark">
+            A
+          </div>
           <div>
             <h1>Approvals</h1>
-            <p>General Approval request</p>
+            <p>
+              General Approval
+              request
+            </p>
           </div>
         </div>
 
@@ -227,8 +458,10 @@ export default function GeneralApprovalPage() {
                 New General Approval
               </h2>
               <p className="muted">
-                Your approval group is automatically taken
-                from your employee record.
+                Your approval group is
+                automatically taken
+                from your employee
+                record.
               </p>
             </div>
 
@@ -236,7 +469,8 @@ export default function GeneralApprovalPage() {
               className="btn btnGhost"
               type="button"
               onClick={() => {
-                window.location.href = "/";
+                window.location.href =
+                  "/";
               }}
             >
               Back
@@ -244,45 +478,88 @@ export default function GeneralApprovalPage() {
           </div>
 
           <div className="employeeBox">
-            <strong>{employee.employeeName}</strong>
+            <strong>
+              {
+                employee.employeeName
+              }
+            </strong>
             <div className="small">
-              {employee.employeeId} •{" "}
-              {employee.department || "Employee"}
+              {
+                employee.employeeId
+              }{" "}
+              •{" "}
+              {employee.department ||
+                "Employee"}
             </div>
-            <div className="small" style={{ marginTop: 10 }}>
+            <div
+              className="small"
+              style={{
+                marginTop: 10,
+              }}
+            >
               Approval Group:{" "}
-              <strong>{employee.leaveApprovalGroup}</strong>
+              <strong>
+                {
+                  employee.leaveApprovalGroup
+                }
+              </strong>
             </div>
           </div>
 
           <form onSubmit={submit}>
             <label className="field">
-              <span className="label">Request Category *</span>
+              <span className="label">
+                Request Category *
+              </span>
               <select
                 className="select"
-                value={requestCategory}
-                onChange={(event) =>
+                value={
+                  requestCategory
+                }
+                onChange={(
+                  event,
+                ) =>
                   setRequestCategory(
-                    event.target.value as Category,
+                    event.target
+                      .value as Category,
                   )
                 }
                 required
               >
-                <option>Item Release</option>
-                <option>Equipment</option>
-                <option>Purchase</option>
-                <option>Budget Request</option>
-                <option>Other</option>
+                <option>
+                  Item Release
+                </option>
+                <option>
+                  Equipment
+                </option>
+                <option>
+                  Purchase
+                </option>
+                <option>
+                  Budget Request
+                </option>
+                <option>
+                  Other
+                </option>
               </select>
             </label>
 
             <label className="field">
-              <span className="label">Request Title *</span>
+              <span className="label">
+                Request Title *
+              </span>
               <input
                 className="input"
-                value={requestTitle}
-                onChange={(event) =>
-                  setRequestTitle(event.target.value)
+                value={
+                  requestTitle
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setRequestTitle(
+                    event.target
+                      .value,
+                  )
                 }
                 placeholder="Enter a short request title"
                 required
@@ -290,30 +567,53 @@ export default function GeneralApprovalPage() {
             </label>
 
             <label className="field">
-              <span className="label">Amount / Budget</span>
+              <span className="label">
+                Amount / Budget
+              </span>
               <input
                 className="input"
                 type="number"
                 min="0"
                 step="0.01"
-                value={amountBudget}
-                onChange={(event) =>
-                  setAmountBudget(event.target.value)
+                value={
+                  amountBudget
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setAmountBudget(
+                    event.target
+                      .value,
+                  )
                 }
                 placeholder="Optional"
               />
-              <div className="small" style={{ marginTop: 5 }}>
+              <div
+                className="small"
+                style={{
+                  marginTop: 5,
+                }}
+              >
                 Optional.
               </div>
             </label>
 
             <label className="field">
-              <span className="label">Request Details *</span>
+              <span className="label">
+                Request Details *
+              </span>
               <textarea
                 className="textarea"
-                value={requestDetails}
-                onChange={(event) =>
-                  setRequestDetails(event.target.value)
+                value={
+                  requestDetails
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setRequestDetails(
+                    event.target
+                      .value,
+                  )
                 }
                 placeholder="Describe what needs approval, why it is needed, and any important details"
                 required
@@ -321,31 +621,90 @@ export default function GeneralApprovalPage() {
             </label>
 
             <label className="field">
-              <span className="label">Attachment</span>
+              <span className="label">
+                Attachment
+              </span>
               <input
                 className="input"
                 type="file"
-                accept="image/*,.pdf"
-                onChange={(event) =>
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                disabled={busy}
+                onChange={(
+                  event,
+                ) => {
+                  const file =
+                    event.target
+                      .files?.[0] ||
+                    null;
+
+                  if (
+                    file &&
+                    file.size >
+                      10 *
+                        1024 *
+                        1024
+                  ) {
+                    setAttachment(
+                      null,
+                    );
+                    event.currentTarget.value =
+                      "";
+                    setStatus(
+                      "Attachment must be 10 MB or smaller.",
+                    );
+                    setStatusKind(
+                      "error",
+                    );
+                    return;
+                  }
+
                   setAttachment(
-                    event.target.files?.[0] || null,
-                  )
-                }
+                    file,
+                  );
+                  setStatus("");
+                }}
               />
-              <div className="small" style={{ marginTop: 5 }}>
-                Optional. Image or PDF, maximum 10 MB.
+              <div
+                className="small"
+                style={{
+                  marginTop: 5,
+                }}
+              >
+                Optional. Image, PDF,
+                Word, Excel,
+                PowerPoint, or text
+                file. Maximum 10 MB.
               </div>
             </label>
+
+            {busy &&
+              attachment &&
+              uploadProgress >
+                0 && (
+                <div
+                  className="small"
+                  style={{
+                    marginTop: 8,
+                  }}
+                >
+                  Uploading
+                  attachment:{" "}
+                  {uploadProgress}%
+                </div>
+              )}
 
             <div className="divider" />
 
             <button
               className="btn btnPrimary"
               disabled={busy}
-              style={{ width: "100%" }}
+              style={{
+                width: "100%",
+              }}
             >
               {busy
-                ? "Submitting…"
+                ? status ||
+                  "Submitting…"
                 : "Submit General Approval"}
             </button>
           </form>
@@ -353,9 +712,11 @@ export default function GeneralApprovalPage() {
           {status && (
             <div
               className={`status ${
-                statusKind === "error"
+                statusKind ===
+                "error"
                   ? "error"
-                  : statusKind === "success"
+                  : statusKind ===
+                      "success"
                     ? "success"
                     : ""
               }`}
