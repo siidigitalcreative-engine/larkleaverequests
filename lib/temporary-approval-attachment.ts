@@ -7,7 +7,7 @@ import {
 } from "@/lib/approval-attachments";
 
 const MAX_ATTACHMENT_BYTES =
-  10 * 1024 * 1024;
+  30 * 1024 * 1024;
 
 export async function resolveTemporaryApprovalAttachment(
   input: {
@@ -69,7 +69,7 @@ export async function resolveTemporaryApprovalAttachment(
       size > MAX_ATTACHMENT_BYTES
     ) {
       throw new Error(
-        "Attachment must be 10 MB or smaller.",
+        "Attachment must be 30 MB or smaller.",
       );
     }
 
@@ -83,7 +83,7 @@ export async function resolveTemporaryApprovalAttachment(
       MAX_ATTACHMENT_BYTES
     ) {
       throw new Error(
-        "Attachment must be 10 MB or smaller.",
+        "Attachment must be 30 MB or smaller.",
       );
     }
 
