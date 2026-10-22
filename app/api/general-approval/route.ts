@@ -1,11 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  listActiveEmployees,
-  uploadLeaveAttachment,
-} from "@/lib/lark";
-import { uploadApprovalCardImage } from "@/lib/approval-attachments";
+import { listActiveEmployees } from "@/lib/lark";
 import {
   createGeneralApprovalGroupRecord,
   createGeneralApprovalRequest,
@@ -17,6 +13,7 @@ import {
 } from "@/lib/session";
 import { makeReviewToken } from "@/lib/reviewToken";
 import { sendCentralRequestNotification } from "@/lib/request-notifications";
+import { resolveTemporaryApprovalAttachment } from "@/lib/temporary-approval-attachment";
 
 export const runtime = "nodejs";
 
@@ -31,6 +28,9 @@ const schema = z.object({
   requestTitle: z.string().min(3).max(200),
   requestDetails: z.string().min(3).max(4000),
   amountBudget: z.string().max(50).optional().default(""),
+  attachmentBlobPathname: z.string().max(1000).optional().default(""),
+  attachmentName: z.string().max(500).optional().default(""),
+  attachmentType: z.string().max(200).optional().default(""),
 });
 
 export async function POST(request: Request) {
@@ -53,11 +53,21 @@ export async function POST(request: Request) {
       requestTitle: String(form.get("requestTitle") ?? ""),
       requestDetails: String(form.get("requestDetails") ?? ""),
       amountBudget: String(form.get("amountBudget") ?? ""),
+      attachmentBlobPathname: String(
+        form.get("attachmentBlobPathname") ?? "",
+      ),
+      attachmentName: String(
+        form.get("attachmentName") ?? "",
+      ),
+      attachmentType: String(
+        form.get("attachmentType") ?? "",
+      ),
     });
 
     const employees = await listActiveEmployees();
     const currentEmployee = employees.find(
-      (employee) => employee.employeeId === session.employeeId,
+      (employee) =>
+        employee.employeeId === session.employeeId,
     );
 
     if (!currentEmployee) {
@@ -87,45 +97,13 @@ export async function POST(request: Request) {
       );
     }
 
-    let attachmentToken: string | undefined;
-    let attachmentImageKey: string | undefined;
-    let attachmentName: string | undefined;
-
-    const attachment = form.get("attachment");
-
-    if (attachment instanceof File && attachment.size > 0) {
-      if (attachment.size > 10 * 1024 * 1024) {
-        return NextResponse.json(
-          {
-            error:
-              "General Approval attachment must be 10 MB or smaller.",
-          },
-          { status: 400 },
-        );
-      }
-
-      attachmentName =
-        attachment.name || "General Approval attachment";
-
-      attachmentToken =
-        await uploadLeaveAttachment(attachment);
-
-      if (
-        attachment.type
-          .toLowerCase()
-          .startsWith("image/")
-      ) {
-        try {
-          attachmentImageKey =
-            await uploadApprovalCardImage(attachment);
-        } catch (error) {
-          console.error(
-            "General Approval card image upload failed:",
-            error,
-          );
-        }
-      }
-    }
+    const attachment =
+      await resolveTemporaryApprovalAttachment({
+        employeeId: currentEmployee.employeeId,
+        pathname: body.attachmentBlobPathname,
+        name: body.attachmentName,
+        contentType: body.attachmentType,
+      });
 
     const submittedAt = Date.now();
 
@@ -140,9 +118,12 @@ export async function POST(request: Request) {
       requestDetails: body.requestDetails,
       amountBudget,
       submittedAt,
-      attachmentToken,
-      attachmentImageKey,
-      attachmentName,
+      attachmentToken:
+        attachment.attachmentToken,
+      attachmentImageKey:
+        attachment.attachmentImageKey,
+      attachmentName:
+        attachment.attachmentName,
     } as const;
 
     const created =
@@ -163,7 +144,9 @@ export async function POST(request: Request) {
         });
 
       if (!approvalRecord.created) {
-        routingWarnings.push(approvalRecord.reason);
+        routingWarnings.push(
+          approvalRecord.reason,
+        );
       }
     } catch (error) {
       routingWarnings.push(
@@ -202,8 +185,10 @@ export async function POST(request: Request) {
         requestDetails: input.requestDetails,
         amountBudget: input.amountBudget,
         reason: input.requestDetails,
-        attachmentImageKey,
-        attachmentName,
+        attachmentImageKey:
+          input.attachmentImageKey,
+        attachmentName:
+          input.attachmentName,
       });
     } catch (error) {
       routingWarnings.push(
@@ -220,7 +205,10 @@ export async function POST(request: Request) {
       routingWarnings,
     });
   } catch (error) {
-    console.error("General Approval request failed:", error);
+    console.error(
+      "General Approval request failed:",
+      error,
+    );
 
     return NextResponse.json(
       {
