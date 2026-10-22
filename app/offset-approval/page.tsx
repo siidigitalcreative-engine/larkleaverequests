@@ -1,6 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+import { upload } from "@vercel/blob/client";
 
 type Employee = {
   employeeId: string;
@@ -18,73 +23,269 @@ type WorkType =
 function pickerDateText(value: string) {
   if (!value) return "Select date";
 
-  const [year, month, day] = value.split("-").map(Number);
-  if (!year || !month || !day) return value;
+  const [year, month, day] =
+    value.split("-").map(Number);
 
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(year, month - 1, day));
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(
+    "en-PH",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    },
+  ).format(
+    new Date(
+      year,
+      month - 1,
+      day,
+    ),
+  );
+}
+
+async function readJsonSafely(
+  response: Response,
+) {
+  const text =
+    await response.text();
+
+  try {
+    return text
+      ? JSON.parse(text)
+      : {};
+  } catch {
+    return {
+      error:
+        response.status === 413
+          ? "The request was too large. Please try again."
+          : text ||
+            "Unexpected server response.",
+    };
+  }
 }
 
 export default function OffsetApprovalPage() {
-  const [loading, setLoading] = useState(true);
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [dateWorked, setDateWorked] = useState("");
-  const [workType, setWorkType] =
-    useState<WorkType>("Weekend");
-  const [requestedOffsetDate, setRequestedOffsetDate] =
+  const [loading, setLoading] =
+    useState(true);
+  const [employee, setEmployee] =
+    useState<Employee | null>(
+      null,
+    );
+  const [
+    dateWorked,
+    setDateWorked,
+  ] = useState("");
+  const [
+    workType,
+    setWorkType,
+  ] =
+    useState<WorkType>(
+      "Weekend",
+    );
+  const [
+    requestedOffsetDate,
+    setRequestedOffsetDate,
+  ] = useState("");
+  const [
+    hoursWorked,
+    setHoursWorked,
+  ] = useState("8");
+  const [reason, setReason] =
     useState("");
-  const [hoursWorked, setHoursWorked] = useState("8");
-  const [reason, setReason] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [statusKind, setStatusKind] =
-    useState<"normal" | "error" | "success">("normal");
-  const [submittedId, setSubmittedId] = useState("");
-  const [actualApprovalGroup, setActualApprovalGroup] =
+  const [
+    attachment,
+    setAttachment,
+  ] =
+    useState<File | null>(
+      null,
+    );
+  const [
+    uploadProgress,
+    setUploadProgress,
+  ] = useState(0);
+  const [busy, setBusy] =
+    useState(false);
+  const [status, setStatus] =
     useState("");
+  const [
+    statusKind,
+    setStatusKind,
+  ] = useState<
+    | "normal"
+    | "error"
+    | "success"
+  >("normal");
+  const [
+    submittedId,
+    setSubmittedId,
+  ] = useState("");
+  const [
+    actualApprovalGroup,
+    setActualApprovalGroup,
+  ] = useState("");
 
   useEffect(() => {
-    fetch("/api/auth/session", { cache: "no-store" })
-      .then((response) => response.json())
+    fetch("/api/auth/session", {
+      cache: "no-store",
+    })
+      .then((response) =>
+        response.json(),
+      )
       .then((data) => {
-        if (data.authenticated) setEmployee(data.employee);
+        if (data.authenticated) {
+          setEmployee(
+            data.employee,
+          );
+        }
       })
       .catch(() => {
-        setStatus("Unable to load your signed-in session.");
+        setStatus(
+          "Unable to load your signed-in session.",
+        );
         setStatusKind("error");
       })
-      .finally(() => setLoading(false));
+      .finally(() =>
+        setLoading(false),
+      );
   }, []);
 
-  async function submit(event: FormEvent) {
+  async function submit(
+    event: FormEvent,
+  ) {
     event.preventDefault();
     setBusy(true);
     setStatus("");
+    setUploadProgress(0);
 
     try {
-      if (dateWorked === requestedOffsetDate) {
+      if (!employee) {
+        throw new Error(
+          "Please verify your identity again.",
+        );
+      }
+
+      if (
+        dateWorked ===
+        requestedOffsetDate
+      ) {
         throw new Error(
           "Requested Offset Date must be different from Date Worked.",
         );
       }
 
-      const form = new FormData();
-      form.set("dateWorked", dateWorked);
-      form.set("workType", workType);
-      form.set("requestedOffsetDate", requestedOffsetDate);
-      form.set("hoursWorked", hoursWorked);
-      form.set("reason", reason);
-      if (attachment) form.set("attachment", attachment);
+      if (
+        attachment &&
+        attachment.size >
+          10 * 1024 * 1024
+      ) {
+        throw new Error(
+          "Attachment must be 10 MB or smaller.",
+        );
+      }
 
-      const response = await fetch("/api/offset-approval", {
-        method: "POST",
-        body: form,
-      });
-      const data = await response.json();
+      let blobPathname = "";
+      let attachmentName = "";
+      let attachmentType = "";
+
+      if (attachment) {
+        setStatus(
+          "Uploading attachment…",
+        );
+        setStatusKind(
+          "normal",
+        );
+
+        const blob =
+          await upload(
+            `approvals-temp/${employee.employeeId}/${Date.now()}-${attachment.name}`,
+            attachment,
+            {
+              access: "private",
+              handleUploadUrl:
+                "/api/approval-attachment-upload",
+              multipart: true,
+              onUploadProgress: (
+                progress,
+              ) => {
+                setUploadProgress(
+                  Math.round(
+                    progress.percentage,
+                  ),
+                );
+              },
+            },
+          );
+
+        blobPathname =
+          blob.pathname;
+        attachmentName =
+          attachment.name;
+        attachmentType =
+          attachment.type ||
+          blob.contentType ||
+          "application/octet-stream";
+      }
+
+      setStatus(
+        "Submitting Offset Approval…",
+      );
+      setStatusKind("normal");
+
+      const form =
+        new FormData();
+
+      form.set(
+        "dateWorked",
+        dateWorked,
+      );
+      form.set(
+        "workType",
+        workType,
+      );
+      form.set(
+        "requestedOffsetDate",
+        requestedOffsetDate,
+      );
+      form.set(
+        "hoursWorked",
+        hoursWorked,
+      );
+      form.set(
+        "reason",
+        reason,
+      );
+
+      if (blobPathname) {
+        form.set(
+          "attachmentBlobPathname",
+          blobPathname,
+        );
+        form.set(
+          "attachmentName",
+          attachmentName,
+        );
+        form.set(
+          "attachmentType",
+          attachmentType,
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/offset-approval",
+          {
+            method: "POST",
+            body: form,
+          },
+        );
+
+      const data =
+        await readJsonSafely(
+          response,
+        );
 
       if (!response.ok) {
         throw new Error(
@@ -93,25 +294,32 @@ export default function OffsetApprovalPage() {
         );
       }
 
-      setSubmittedId(data.requestId);
+      setSubmittedId(
+        data.requestId,
+      );
       setActualApprovalGroup(
         data.approvalGroup ||
-          employee?.leaveApprovalGroup ||
+          employee.leaveApprovalGroup ||
           "",
       );
       setStatus(
         "Offset Approval request submitted for approval.",
       );
-      setStatusKind("success");
+      setStatusKind(
+        "success",
+      );
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
           : "Unable to submit Offset Approval request.",
       );
-      setStatusKind("error");
+      setStatusKind(
+        "error",
+      );
     } finally {
       setBusy(false);
+      setUploadProgress(0);
     }
   }
 
@@ -119,7 +327,10 @@ export default function OffsetApprovalPage() {
     return (
       <main className="shell">
         <div className="wrap">
-          <div className="card">Loading Offset Approval…</div>
+          <div className="card">
+            Loading Offset
+            Approval…
+          </div>
         </div>
       </main>
     );
@@ -130,24 +341,35 @@ export default function OffsetApprovalPage() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
             <div>
               <h1>Approvals</h1>
-              <p>Offset Approval request</p>
+              <p>
+                Offset Approval
+                request
+              </p>
             </div>
           </div>
 
           <div className="card">
-            <h2 className="sectionTitle">Sign in first</h2>
+            <h2 className="sectionTitle">
+              Sign in first
+            </h2>
             <p className="muted">
-              Please verify your identity from the main
-              Approvals page before filing an Offset Approval.
+              Please verify your
+              identity from the main
+              Approvals page before
+              filing an Offset
+              Approval.
             </p>
             <button
               className="btn btnPrimary"
               type="button"
               onClick={() => {
-                window.location.href = "/";
+                window.location.href =
+                  "/";
               }}
             >
               Go to Approvals
@@ -163,20 +385,31 @@ export default function OffsetApprovalPage() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
             <div>
               <h1>Approvals</h1>
-              <p>Offset Approval request</p>
+              <p>
+                Offset Approval
+                request
+              </p>
             </div>
           </div>
 
           <div className="card successPanel">
-            <div className="successIcon">✓</div>
+            <div className="successIcon">
+              ✓
+            </div>
+
             <h2 className="sectionTitle">
-              Offset Approval submitted
+              Offset Approval
+              submitted
             </h2>
+
             <p className="muted">
-              Your request has been sent to the{" "}
+              Your request has been
+              sent to the{" "}
               <strong>
                 {actualApprovalGroup ||
                   employee.leaveApprovalGroup}
@@ -186,15 +419,23 @@ export default function OffsetApprovalPage() {
 
             <div
               className="status success"
-              style={{ margin: "18px auto", maxWidth: 440 }}
+              style={{
+                margin:
+                  "18px auto",
+                maxWidth: 440,
+              }}
             >
-              Request ID: <strong>{submittedId}</strong>
+              Request ID:{" "}
+              <strong>
+                {submittedId}
+              </strong>
             </div>
 
             <div
               className="row"
               style={{
-                justifyContent: "center",
+                justifyContent:
+                  "center",
                 marginTop: 18,
               }}
             >
@@ -204,22 +445,28 @@ export default function OffsetApprovalPage() {
                 onClick={() => {
                   setSubmittedId("");
                   setDateWorked("");
-                  setWorkType("Weekend");
-                  setRequestedOffsetDate("");
+                  setWorkType(
+                    "Weekend",
+                  );
+                  setRequestedOffsetDate(
+                    "",
+                  );
                   setHoursWorked("8");
                   setReason("");
                   setAttachment(null);
                   setStatus("");
                 }}
               >
-                File another Offset Approval
+                File another Offset
+                Approval
               </button>
 
               <button
                 className="btn btnGhost"
                 type="button"
                 onClick={() => {
-                  window.location.href = "/";
+                  window.location.href =
+                    "/";
                 }}
               >
                 Back to Approvals
@@ -288,7 +535,8 @@ export default function OffsetApprovalPage() {
         @media (max-width: 640px) {
           .grid {
             display: grid !important;
-            grid-template-columns: minmax(0, 1fr) !important;
+            grid-template-columns:
+              minmax(0, 1fr) !important;
           }
         }
       `}</style>
@@ -296,10 +544,15 @@ export default function OffsetApprovalPage() {
       <main className="shell">
         <div className="wrap">
           <div className="brand">
-            <div className="brandMark">A</div>
+            <div className="brandMark">
+              A
+            </div>
             <div>
               <h1>Approvals</h1>
-              <p>Offset Approval request</p>
+              <p>
+                Offset Approval
+                request
+              </p>
             </div>
           </div>
 
@@ -310,8 +563,11 @@ export default function OffsetApprovalPage() {
                   New Offset Approval
                 </h2>
                 <p className="muted">
-                  Use this for approved work completed on a
-                  weekend, rest day, holiday, or other day.
+                  Use this for approved
+                  work completed on a
+                  weekend, rest day,
+                  holiday, or other
+                  day.
                 </p>
               </div>
 
@@ -319,7 +575,8 @@ export default function OffsetApprovalPage() {
                 className="btn btnGhost"
                 type="button"
                 onClick={() => {
-                  window.location.href = "/";
+                  window.location.href =
+                    "/";
                 }}
               >
                 Back
@@ -327,40 +584,72 @@ export default function OffsetApprovalPage() {
             </div>
 
             <div className="employeeBox">
-              <strong>{employee.employeeName}</strong>
+              <strong>
+                {
+                  employee.employeeName
+                }
+              </strong>
               <div className="small">
-                {employee.employeeId} •{" "}
-                {employee.department || "Employee"}
+                {
+                  employee.employeeId
+                }{" "}
+                •{" "}
+                {employee.department ||
+                  "Employee"}
               </div>
-              <div className="small" style={{ marginTop: 10 }}>
+              <div
+                className="small"
+                style={{
+                  marginTop: 10,
+                }}
+              >
                 Approval Group:{" "}
-                <strong>{employee.leaveApprovalGroup}</strong>
+                <strong>
+                  {
+                    employee.leaveApprovalGroup
+                  }
+                </strong>
               </div>
             </div>
 
             <form onSubmit={submit}>
               <div className="grid">
                 <label className="field">
-                  <span className="label">Date Worked *</span>
+                  <span className="label">
+                    Date Worked *
+                  </span>
                   <div className="pickerShell">
                     <div
                       className={`pickerDisplay ${
-                        dateWorked ? "" : "placeholder"
+                        dateWorked
+                          ? ""
+                          : "placeholder"
                       }`}
                     >
-                      {pickerDateText(dateWorked)}
+                      {pickerDateText(
+                        dateWorked,
+                      )}
                     </div>
                     <input
                       className="pickerNativeInput"
                       type="date"
-                      value={dateWorked}
-                      onClick={(event) => {
+                      value={
+                        dateWorked
+                      }
+                      onClick={(
+                        event,
+                      ) => {
                         try {
                           event.currentTarget.showPicker?.();
                         } catch {}
                       }}
-                      onChange={(event) =>
-                        setDateWorked(event.target.value)
+                      onChange={(
+                        event,
+                      ) =>
+                        setDateWorked(
+                          event.target
+                            .value,
+                        )
                       }
                       required
                     />
@@ -369,7 +658,8 @@ export default function OffsetApprovalPage() {
 
                 <label className="field">
                   <span className="label">
-                    Requested Offset Date *
+                    Requested Offset
+                    Date *
                   </span>
                   <div className="pickerShell">
                     <div
@@ -379,20 +669,29 @@ export default function OffsetApprovalPage() {
                           : "placeholder"
                       }`}
                     >
-                      {pickerDateText(requestedOffsetDate)}
+                      {pickerDateText(
+                        requestedOffsetDate,
+                      )}
                     </div>
                     <input
                       className="pickerNativeInput"
                       type="date"
-                      value={requestedOffsetDate}
-                      onClick={(event) => {
+                      value={
+                        requestedOffsetDate
+                      }
+                      onClick={(
+                        event,
+                      ) => {
                         try {
                           event.currentTarget.showPicker?.();
                         } catch {}
                       }}
-                      onChange={(event) =>
+                      onChange={(
+                        event,
+                      ) =>
                         setRequestedOffsetDate(
-                          event.target.value,
+                          event.target
+                            .value,
                         )
                       }
                       required
@@ -402,35 +701,57 @@ export default function OffsetApprovalPage() {
               </div>
 
               <label className="field">
-                <span className="label">Work Type *</span>
+                <span className="label">
+                  Work Type *
+                </span>
                 <select
                   className="select"
                   value={workType}
-                  onChange={(event) =>
+                  onChange={(
+                    event,
+                  ) =>
                     setWorkType(
-                      event.target.value as WorkType,
+                      event.target
+                        .value as WorkType,
                     )
                   }
                   required
                 >
-                  <option>Weekend</option>
-                  <option>Rest Day</option>
-                  <option>Holiday</option>
-                  <option>Other</option>
+                  <option>
+                    Weekend
+                  </option>
+                  <option>
+                    Rest Day
+                  </option>
+                  <option>
+                    Holiday
+                  </option>
+                  <option>
+                    Other
+                  </option>
                 </select>
               </label>
 
               <label className="field">
-                <span className="label">Hours Worked *</span>
+                <span className="label">
+                  Hours Worked *
+                </span>
                 <input
                   className="input"
                   type="number"
                   min="0.25"
                   max="24"
                   step="0.25"
-                  value={hoursWorked}
-                  onChange={(event) =>
-                    setHoursWorked(event.target.value)
+                  value={
+                    hoursWorked
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setHoursWorked(
+                      event.target
+                        .value,
+                    )
                   }
                   required
                 />
@@ -438,13 +759,19 @@ export default function OffsetApprovalPage() {
 
               <label className="field">
                 <span className="label">
-                  Reason / Work Details *
+                  Reason / Work
+                  Details *
                 </span>
                 <textarea
                   className="textarea"
                   value={reason}
-                  onChange={(event) =>
-                    setReason(event.target.value)
+                  onChange={(
+                    event,
+                  ) =>
+                    setReason(
+                      event.target
+                        .value,
+                    )
                   }
                   placeholder="Describe the work completed and why you are requesting the offset"
                   required
@@ -452,27 +779,86 @@ export default function OffsetApprovalPage() {
               </label>
 
               <label className="field">
-                <span className="label">Attachment</span>
+                <span className="label">
+                  Attachment
+                </span>
                 <input
                   className="input"
                   type="file"
-                  accept="image/*,.pdf"
-                  onChange={(event) =>
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                  disabled={busy}
+                  onChange={(
+                    event,
+                  ) => {
+                    const file =
+                      event.target
+                        .files?.[0] ||
+                      null;
+
+                    if (
+                      file &&
+                      file.size >
+                        10 *
+                          1024 *
+                          1024
+                    ) {
+                      setAttachment(
+                        null,
+                      );
+                      event.currentTarget.value =
+                        "";
+                      setStatus(
+                        "Attachment must be 10 MB or smaller.",
+                      );
+                      setStatusKind(
+                        "error",
+                      );
+                      return;
+                    }
+
                     setAttachment(
-                      event.target.files?.[0] || null,
-                    )
-                  }
+                      file,
+                    );
+                    setStatus("");
+                  }}
                 />
                 <div
                   className="small"
-                  style={{ marginTop: 5 }}
+                  style={{
+                    marginTop: 5,
+                  }}
                 >
-                  Optional. Image or PDF, maximum 10 MB.
+                  Optional. Image, PDF,
+                  Word, Excel,
+                  PowerPoint, or text
+                  file. Maximum 10 MB.
                 </div>
               </label>
 
-              <div className="small" style={{ marginTop: 8 }}>
-                Requested Offset Date must be different from
+              {busy &&
+                attachment &&
+                uploadProgress >
+                  0 && (
+                  <div
+                    className="small"
+                    style={{
+                      marginTop: 8,
+                    }}
+                  >
+                    Uploading
+                    attachment:{" "}
+                    {uploadProgress}%
+                  </div>
+                )}
+
+              <div
+                className="small"
+                style={{
+                  marginTop: 8,
+                }}
+              >
+                Requested Offset Date
+                must be different from
                 Date Worked.
               </div>
 
@@ -481,10 +867,13 @@ export default function OffsetApprovalPage() {
               <button
                 className="btn btnPrimary"
                 disabled={busy}
-                style={{ width: "100%" }}
+                style={{
+                  width: "100%",
+                }}
               >
                 {busy
-                  ? "Submitting…"
+                  ? status ||
+                    "Submitting…"
                   : "Submit Offset Approval"}
               </button>
             </form>
@@ -492,9 +881,11 @@ export default function OffsetApprovalPage() {
             {status && (
               <div
                 className={`status ${
-                  statusKind === "error"
+                  statusKind ===
+                  "error"
                     ? "error"
-                    : statusKind === "success"
+                    : statusKind ===
+                        "success"
                       ? "success"
                       : ""
                 }`}
