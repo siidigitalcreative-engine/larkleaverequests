@@ -106,6 +106,22 @@ export default function OffsetApprovalPage() {
     uploadProgress,
     setUploadProgress,
   ] = useState(0);
+  const [
+    uploadedBlobPathname,
+    setUploadedBlobPathname,
+  ] = useState("");
+  const [
+    uploadedAttachmentName,
+    setUploadedAttachmentName,
+  ] = useState("");
+  const [
+    uploadedAttachmentType,
+    setUploadedAttachmentType,
+  ] = useState("");
+  const [
+    attachmentUploading,
+    setAttachmentUploading,
+  ] = useState(false);
   const [busy, setBusy] =
     useState(false);
   const [status, setStatus] =
@@ -152,6 +168,82 @@ export default function OffsetApprovalPage() {
       );
   }, []);
 
+  async function uploadAttachmentNow(
+    file: File,
+  ) {
+    if (!employee) {
+      throw new Error(
+        "Please verify your identity again.",
+      );
+    }
+
+    if (file.size > 30 * 1024 * 1024) {
+      throw new Error(
+        "Attachment must be 30 MB or smaller.",
+      );
+    }
+
+    setAttachmentUploading(true);
+    setUploadProgress(0);
+    setUploadedBlobPathname("");
+    setUploadedAttachmentName("");
+    setUploadedAttachmentType("");
+    setStatus("Uploading attachment…");
+    setStatusKind("normal");
+
+    try {
+      const blob = await upload(
+        `approvals-temp/${employee.employeeId}/${Date.now()}-${file.name}`,
+        file,
+        {
+          access: "private",
+          handleUploadUrl:
+            "/api/approval-attachment-upload",
+          multipart: true,
+          onUploadProgress: (
+            progress,
+          ) => {
+            setUploadProgress(
+              Math.round(
+                progress.percentage,
+              ),
+            );
+          },
+        },
+      );
+
+      setUploadedBlobPathname(
+        blob.pathname,
+      );
+      setUploadedAttachmentName(
+        file.name,
+      );
+      setUploadedAttachmentType(
+        file.type ||
+          blob.contentType ||
+          "application/octet-stream",
+      );
+      setUploadProgress(100);
+      setStatus(
+        "Attachment uploaded. Ready to submit.",
+      );
+      setStatusKind("success");
+    } catch (error) {
+      setUploadedBlobPathname("");
+      setUploadedAttachmentName("");
+      setUploadedAttachmentType("");
+      setUploadProgress(0);
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload attachment.",
+      );
+      setStatusKind("error");
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
   async function submit(
     event: FormEvent,
   ) {
@@ -186,48 +278,30 @@ export default function OffsetApprovalPage() {
         );
       }
 
-      let blobPathname = "";
-      let attachmentName = "";
-      let attachmentType = "";
-
-      if (attachment) {
-        setStatus(
-          "Uploading attachment…",
+      if (
+        attachment &&
+        attachmentUploading
+      ) {
+        throw new Error(
+          "Please wait for the attachment upload to finish.",
         );
-        setStatusKind(
-          "normal",
-        );
-
-        const blob =
-          await upload(
-            `approvals-temp/${employee.employeeId}/${Date.now()}-${attachment.name}`,
-            attachment,
-            {
-              access: "private",
-              handleUploadUrl:
-                "/api/approval-attachment-upload",
-              multipart: true,
-              onUploadProgress: (
-                progress,
-              ) => {
-                setUploadProgress(
-                  Math.round(
-                    progress.percentage,
-                  ),
-                );
-              },
-            },
-          );
-
-        blobPathname =
-          blob.pathname;
-        attachmentName =
-          attachment.name;
-        attachmentType =
-          attachment.type ||
-          blob.contentType ||
-          "application/octet-stream";
       }
+
+      if (
+        attachment &&
+        !uploadedBlobPathname
+      ) {
+        throw new Error(
+          "Attachment upload is not ready. Please select the file again.",
+        );
+      }
+
+      const blobPathname =
+        uploadedBlobPathname;
+      const attachmentName =
+        uploadedAttachmentName;
+      const attachmentType =
+        uploadedAttachmentType;
 
       setStatus(
         "Submitting Offset Approval…",
@@ -454,6 +528,10 @@ export default function OffsetApprovalPage() {
                   setHoursWorked("8");
                   setReason("");
                   setAttachment(null);
+                  setUploadedBlobPathname("");
+                  setUploadedAttachmentName("");
+                  setUploadedAttachmentType("");
+                  setUploadProgress(0);
                   setStatus("");
                 }}
               >
@@ -631,197 +709,88 @@ export default function OffsetApprovalPage() {
                       )}
                     </div>
                     <input
-                      className="pickerNativeInput"
-                      type="date"
-                      value={
-                        dateWorked
-                      }
-                      onClick={(
-                        event,
-                      ) => {
-                        try {
-                          event.currentTarget.showPicker?.();
-                        } catch {}
-                      }}
+
+                      className="input"
+
+                      type="file"
+
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+
+                      disabled={busy || attachmentUploading}
+
                       onChange={(
-                        event,
-                      ) =>
-                        setDateWorked(
-                          event.target
-                            .value,
-                        )
-                      }
-                      required
-                    />
-                  </div>
-                </label>
 
-                <label className="field">
-                  <span className="label">
-                    Requested Offset
-                    Date *
-                  </span>
-                  <div className="pickerShell">
-                    <div
-                      className={`pickerDisplay ${
-                        requestedOffsetDate
-                          ? ""
-                          : "placeholder"
-                      }`}
-                    >
-                      {pickerDateText(
-                        requestedOffsetDate,
-                      )}
-                    </div>
-                    <input
-                      className="pickerNativeInput"
-                      type="date"
-                      value={
-                        requestedOffsetDate
-                      }
-                      onClick={(
                         event,
+
                       ) => {
-                        try {
-                          event.currentTarget.showPicker?.();
-                        } catch {}
-                      }}
-                      onChange={(
-                        event,
-                      ) =>
-                        setRequestedOffsetDate(
+
+                        const file =
+
                           event.target
-                            .value,
-                        )
-                      }
-                      required
+
+                            .files?.[0] ||
+
+                          null;
+
+
+                        setAttachment(file);
+
+                        setUploadedBlobPathname("");
+
+                        setUploadedAttachmentName("");
+
+                        setUploadedAttachmentType("");
+
+                        setUploadProgress(0);
+
+
+                        if (!file) {
+
+                          setStatus("");
+
+                          return;
+
+                        }
+
+
+                        if (
+
+                          file.size >
+
+                            30 *
+
+                              1024 *
+
+                              1024
+
+                        ) {
+
+                          setAttachment(null);
+
+                          event.currentTarget.value = "";
+
+                          setStatus(
+
+                            "Attachment must be 30 MB or smaller.",
+
+                          );
+
+                          setStatusKind("error");
+
+                          return;
+
+                        }
+
+
+                        void uploadAttachmentNow(
+
+                          file,
+
+                        );
+
+                      }}
+
                     />
-                  </div>
-                </label>
-              </div>
-
-              <label className="field">
-                <span className="label">
-                  Work Type *
-                </span>
-                <select
-                  className="select"
-                  value={workType}
-                  onChange={(
-                    event,
-                  ) =>
-                    setWorkType(
-                      event.target
-                        .value as WorkType,
-                    )
-                  }
-                  required
-                >
-                  <option>
-                    Weekend
-                  </option>
-                  <option>
-                    Rest Day
-                  </option>
-                  <option>
-                    Holiday
-                  </option>
-                  <option>
-                    Other
-                  </option>
-                </select>
-              </label>
-
-              <label className="field">
-                <span className="label">
-                  Hours Worked *
-                </span>
-                <input
-                  className="input"
-                  type="number"
-                  min="0.25"
-                  max="24"
-                  step="0.25"
-                  value={
-                    hoursWorked
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setHoursWorked(
-                      event.target
-                        .value,
-                    )
-                  }
-                  required
-                />
-              </label>
-
-              <label className="field">
-                <span className="label">
-                  Reason / Work
-                  Details *
-                </span>
-                <textarea
-                  className="textarea"
-                  value={reason}
-                  onChange={(
-                    event,
-                  ) =>
-                    setReason(
-                      event.target
-                        .value,
-                    )
-                  }
-                  placeholder="Describe the work completed and why you are requesting the offset"
-                  required
-                />
-              </label>
-
-              <label className="field">
-                <span className="label">
-                  Attachment
-                </span>
-                <input
-                  className="input"
-                  type="file"
-                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-                  disabled={busy}
-                  onChange={(
-                    event,
-                  ) => {
-                    const file =
-                      event.target
-                        .files?.[0] ||
-                      null;
-
-                    if (
-                      file &&
-                      file.size >
-                        10 *
-                          1024 *
-                          1024
-                    ) {
-                      setAttachment(
-                        null,
-                      );
-                      event.currentTarget.value =
-                        "";
-                      setStatus(
-                        "Attachment must be 30 MB or smaller.",
-                      );
-                      setStatusKind(
-                        "error",
-                      );
-                      return;
-                    }
-
-                    setAttachment(
-                      file,
-                    );
-                    setStatus("");
-                  }}
-                />
                 <div
                   className="small"
                   style={{
@@ -835,19 +804,19 @@ export default function OffsetApprovalPage() {
                 </div>
               </label>
 
-              {busy &&
-                attachment &&
-                uploadProgress >
-                  0 && (
+              {attachment &&
+                (attachmentUploading || uploadProgress > 0) && (
                   <div
                     className="small"
                     style={{
                       marginTop: 8,
                     }}
                   >
-                    Uploading
-                    attachment:{" "}
-                    {uploadProgress}%
+                    {attachmentUploading
+                    ? `Uploading attachment: ${uploadProgress}%`
+                    : uploadedBlobPathname
+                      ? "Attachment uploaded. Ready to submit."
+                      : ""}
                   </div>
                 )}
 
@@ -866,15 +835,16 @@ export default function OffsetApprovalPage() {
 
               <button
                 className="btn btnPrimary"
-                disabled={busy}
+                disabled={busy || attachmentUploading}
                 style={{
                   width: "100%",
                 }}
               >
-                {busy
-                  ? status ||
-                    "Submitting…"
-                  : "Submit Offset Approval"}
+                {attachmentUploading
+                  ? `Uploading attachment… ${uploadProgress}%`
+                  : busy
+                    ? "Submitting…"
+                    : "Submit Offset Approval"}
               </button>
             </form>
 
