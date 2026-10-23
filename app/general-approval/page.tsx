@@ -79,6 +79,22 @@ export default function GeneralApprovalPage() {
     uploadProgress,
     setUploadProgress,
   ] = useState(0);
+  const [
+    uploadedBlobPathname,
+    setUploadedBlobPathname,
+  ] = useState("");
+  const [
+    uploadedAttachmentName,
+    setUploadedAttachmentName,
+  ] = useState("");
+  const [
+    uploadedAttachmentType,
+    setUploadedAttachmentType,
+  ] = useState("");
+  const [
+    attachmentUploading,
+    setAttachmentUploading,
+  ] = useState(false);
   const [busy, setBusy] =
     useState(false);
   const [status, setStatus] =
@@ -125,6 +141,82 @@ export default function GeneralApprovalPage() {
       );
   }, []);
 
+  async function uploadAttachmentNow(
+    file: File,
+  ) {
+    if (!employee) {
+      throw new Error(
+        "Please verify your identity again.",
+      );
+    }
+
+    if (file.size > 30 * 1024 * 1024) {
+      throw new Error(
+        "Attachment must be 30 MB or smaller.",
+      );
+    }
+
+    setAttachmentUploading(true);
+    setUploadProgress(0);
+    setUploadedBlobPathname("");
+    setUploadedAttachmentName("");
+    setUploadedAttachmentType("");
+    setStatus("Uploading attachment…");
+    setStatusKind("normal");
+
+    try {
+      const blob = await upload(
+        `approvals-temp/${employee.employeeId}/${Date.now()}-${file.name}`,
+        file,
+        {
+          access: "private",
+          handleUploadUrl:
+            "/api/approval-attachment-upload",
+          multipart: true,
+          onUploadProgress: (
+            progress,
+          ) => {
+            setUploadProgress(
+              Math.round(
+                progress.percentage,
+              ),
+            );
+          },
+        },
+      );
+
+      setUploadedBlobPathname(
+        blob.pathname,
+      );
+      setUploadedAttachmentName(
+        file.name,
+      );
+      setUploadedAttachmentType(
+        file.type ||
+          blob.contentType ||
+          "application/octet-stream",
+      );
+      setUploadProgress(100);
+      setStatus(
+        "Attachment uploaded. Ready to submit.",
+      );
+      setStatusKind("success");
+    } catch (error) {
+      setUploadedBlobPathname("");
+      setUploadedAttachmentName("");
+      setUploadedAttachmentType("");
+      setUploadProgress(0);
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload attachment.",
+      );
+      setStatusKind("error");
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
   async function submit(
     event: FormEvent,
   ) {
@@ -150,48 +242,30 @@ export default function GeneralApprovalPage() {
         );
       }
 
-      let blobPathname = "";
-      let attachmentName = "";
-      let attachmentType = "";
-
-      if (attachment) {
-        setStatus(
-          "Uploading attachment…",
+      if (
+        attachment &&
+        attachmentUploading
+      ) {
+        throw new Error(
+          "Please wait for the attachment upload to finish.",
         );
-        setStatusKind(
-          "normal",
-        );
-
-        const blob =
-          await upload(
-            `approvals-temp/${employee.employeeId}/${Date.now()}-${attachment.name}`,
-            attachment,
-            {
-              access: "private",
-              handleUploadUrl:
-                "/api/approval-attachment-upload",
-              multipart: true,
-              onUploadProgress: (
-                progress,
-              ) => {
-                setUploadProgress(
-                  Math.round(
-                    progress.percentage,
-                  ),
-                );
-              },
-            },
-          );
-
-        blobPathname =
-          blob.pathname;
-        attachmentName =
-          attachment.name;
-        attachmentType =
-          attachment.type ||
-          blob.contentType ||
-          "application/octet-stream";
       }
+
+      if (
+        attachment &&
+        !uploadedBlobPathname
+      ) {
+        throw new Error(
+          "Attachment upload is not ready. Please select the file again.",
+        );
+      }
+
+      const blobPathname =
+        uploadedBlobPathname;
+      const attachmentName =
+        uploadedAttachmentName;
+      const attachmentType =
+        uploadedAttachmentType;
 
       setStatus(
         "Submitting General Approval…",
@@ -411,6 +485,10 @@ export default function GeneralApprovalPage() {
                   setRequestDetails("");
                   setAmountBudget("");
                   setAttachment(null);
+                  setUploadedBlobPathname("");
+                  setUploadedAttachmentName("");
+                  setUploadedAttachmentType("");
+                  setUploadProgress(0);
                   setStatus("");
                 }}
               >
@@ -549,120 +627,87 @@ export default function GeneralApprovalPage() {
                 Request Title *
               </span>
               <input
-                className="input"
-                value={
-                  requestTitle
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setRequestTitle(
-                    event.target
-                      .value,
-                  )
-                }
-                placeholder="Enter a short request title"
-                required
-              />
-            </label>
 
-            <label className="field">
-              <span className="label">
-                Amount / Budget
-              </span>
-              <input
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={
-                  amountBudget
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setAmountBudget(
-                    event.target
-                      .value,
-                  )
-                }
-                placeholder="Optional"
-              />
-              <div
-                className="small"
-                style={{
-                  marginTop: 5,
-                }}
-              >
-                Optional.
-              </div>
-            </label>
 
-            <label className="field">
-              <span className="label">
-                Request Details *
-              </span>
-              <textarea
-                className="textarea"
-                value={
-                  requestDetails
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setRequestDetails(
-                    event.target
-                      .value,
-                  )
-                }
-                placeholder="Describe what needs approval, why it is needed, and any important details"
-                required
-              />
-            </label>
-
-            <label className="field">
-              <span className="label">
-                Attachment
-              </span>
-              <input
-                className="input"
                 type="file"
+
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-                disabled={busy}
+
+                disabled={busy || attachmentUploading}
+
                 onChange={(
+
                   event,
+
                 ) => {
+
                   const file =
+
                     event.target
+
                       .files?.[0] ||
+
                     null;
 
-                  if (
-                    file &&
-                    file.size >
-                      10 *
-                        1024 *
-                        1024
-                  ) {
-                    setAttachment(
-                      null,
-                    );
-                    event.currentTarget.value =
-                      "";
-                    setStatus(
-                      "Attachment must be 30 MB or smaller.",
-                    );
-                    setStatusKind(
-                      "error",
-                    );
+
+                  setAttachment(file);
+
+                  setUploadedBlobPathname("");
+
+                  setUploadedAttachmentName("");
+
+                  setUploadedAttachmentType("");
+
+                  setUploadProgress(0);
+
+
+                  if (!file) {
+
+                    setStatus("");
+
                     return;
+
                   }
 
-                  setAttachment(
+
+                  if (
+
+                    file.size >
+
+                      30 *
+
+                        1024 *
+
+                        1024
+
+                  ) {
+
+                    setAttachment(null);
+
+                    event.currentTarget.value = "";
+
+                    setStatus(
+
+                      "Attachment must be 30 MB or smaller.",
+
+                    );
+
+                    setStatusKind("error");
+
+                    return;
+
+                  }
+
+
+                  void uploadAttachmentNow(
+
                     file,
+
                   );
-                  setStatus("");
+
                 }}
+
               />
               <div
                 className="small"
@@ -677,19 +722,19 @@ export default function GeneralApprovalPage() {
               </div>
             </label>
 
-            {busy &&
-              attachment &&
-              uploadProgress >
-                0 && (
+            {attachment &&
+                (attachmentUploading || uploadProgress > 0) && (
                 <div
                   className="small"
                   style={{
                     marginTop: 8,
                   }}
                 >
-                  Uploading
-                  attachment:{" "}
-                  {uploadProgress}%
+                  {attachmentUploading
+                    ? `Uploading attachment: ${uploadProgress}%`
+                    : uploadedBlobPathname
+                      ? "Attachment uploaded. Ready to submit."
+                      : ""}
                 </div>
               )}
 
@@ -697,15 +742,16 @@ export default function GeneralApprovalPage() {
 
             <button
               className="btn btnPrimary"
-              disabled={busy}
+              disabled={busy || attachmentUploading}
               style={{
                 width: "100%",
               }}
             >
-              {busy
-                ? status ||
-                  "Submitting…"
-                : "Submit General Approval"}
+              {attachmentUploading
+                ? `Uploading attachment… ${uploadProgress}%`
+                : busy
+                  ? "Submitting…"
+                  : "Submit General Approval"}
             </button>
           </form>
 
