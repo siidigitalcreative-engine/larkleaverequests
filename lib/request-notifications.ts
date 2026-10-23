@@ -106,6 +106,219 @@ function text(value: unknown) {
   return String(value ?? "").trim();
 }
 
+type AttachmentLookupConfig = {
+  tableId?: string;
+  source:
+    | "leave"
+    | "change-off"
+    | "overtime"
+    | "undertime"
+    | "general-approval"
+    | "offset-approval";
+  requestIdFields: string[];
+};
+
+function attachmentLookupConfig(
+  requestType: CentralRequestNotificationInput["requestType"],
+): AttachmentLookupConfig {
+  if (requestType === "Leave") {
+    return {
+      tableId: process.env.LARK_LEAVE_TABLE_ID,
+      source: "leave",
+      requestIdFields: [
+        "Leave Request ID",
+        "Request ID",
+      ],
+    };
+  }
+
+  if (requestType === "Change Day-Off") {
+    return {
+      tableId: process.env.LARK_CHANGE_OFF_TABLE_ID,
+      source: "change-off",
+      requestIdFields: [
+        "Change Off Request ID",
+        "Request ID",
+      ],
+    };
+  }
+
+  if (requestType === "Overtime") {
+    return {
+      tableId: process.env.LARK_OVERTIME_TABLE_ID,
+      source: "overtime",
+      requestIdFields: [
+        "Overtime Request ID",
+        "Request ID",
+      ],
+    };
+  }
+
+  if (requestType === "Undertime") {
+    return {
+      tableId: process.env.LARK_UNDERTIME_TABLE_ID,
+      source: "undertime",
+      requestIdFields: [
+        "Undertime Request ID",
+        "Request ID",
+      ],
+    };
+  }
+
+  if (requestType === "General Approval") {
+    return {
+      tableId: process.env.LARK_GENERAL_APPROVAL_TABLE_ID,
+      source: "general-approval",
+      requestIdFields: [
+        "General Approval Request ID",
+        "Request ID",
+      ],
+    };
+  }
+
+  return {
+    tableId: process.env.LARK_OFFSET_APPROVAL_TABLE_ID,
+    source: "offset-approval",
+    requestIdFields: [
+      "Offset Request ID",
+      "Request ID",
+    ],
+  };
+}
+
+function firstAttachmentToken(value: unknown) {
+  if (!Array.isArray(value)) return "";
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+
+    const token = text(
+      (item as any).file_token ??
+        (item as any).fileToken ??
+        (item as any).token,
+    );
+
+    if (token) return token;
+  }
+
+  return "";
+}
+
+async function resolveCentralAttachmentUrl(
+  input: CentralRequestNotificationInput,
+) {
+  if (!input.attachmentName) return "";
+
+  const baseUrl = process.env.APP_PUBLIC_URL;
+  if (!baseUrl) return "";
+
+  const config =
+    attachmentLookupConfig(
+      input.requestType,
+    );
+
+  if (!config.tableId) return "";
+
+  const token =
+    await getTenantAccessToken();
+
+  let pageToken = "";
+
+  do {
+    const url = new URL(
+      `https://open.larksuite.com/open-apis/bitable/v1/apps/${baseAppToken()}/tables/${config.tableId}/records`,
+    );
+
+    url.searchParams.set(
+      "page_size",
+      "500",
+    );
+
+    if (pageToken) {
+      url.searchParams.set(
+        "page_token",
+        pageToken,
+      );
+    }
+
+    const response =
+      await fetch(url, {
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+
+    const data =
+      await response.json();
+
+    if (
+      !response.ok ||
+      data.code !== 0
+    ) {
+      console.error(
+        "Unable to resolve centralized request attachment:",
+        data.msg ||
+          response.statusText,
+      );
+      return "";
+    }
+
+    for (
+      const record of
+        data.data?.items ?? []
+    ) {
+      const fields =
+        record?.fields ?? {};
+
+      const matchesRequest =
+        config.requestIdFields.some(
+          (fieldName) =>
+            text(
+              fields[fieldName],
+            ) ===
+            input.requestId,
+        );
+
+      if (!matchesRequest) {
+        continue;
+      }
+
+      const fileToken =
+        firstAttachmentToken(
+          fields["Attachment"],
+        );
+
+      const recordId =
+        text(record?.record_id);
+
+      if (
+        !fileToken ||
+        !recordId
+      ) {
+        return "";
+      }
+
+      return (
+        `${baseUrl}/api/attachment/${encodeURIComponent(fileToken)}` +
+        `?source=${encodeURIComponent(config.source)}` +
+        `&recordId=${encodeURIComponent(recordId)}` +
+        `&name=${encodeURIComponent(input.attachmentName)}`
+      );
+    }
+
+    pageToken =
+      data.data?.has_more
+        ? text(
+            data.data?.page_token,
+          )
+        : "";
+  } while (pageToken);
+
+  return "";
+}
+
 function attendanceGroups(value: unknown): string[] {
   const results: string[] = [];
 
@@ -338,6 +551,19 @@ function reasonHeading(input: CentralRequestNotificationInput) {
       : "Reason";
 }
 
+function attachmentLabel(
+  input: CentralRequestNotificationInput,
+  attachmentUrl: string,
+) {
+  if (!input.attachmentName) return "";
+
+  if (attachmentUrl) {
+    return `[📎 ${input.attachmentName}](${attachmentUrl})`;
+  }
+
+  return input.attachmentName;
+}
+
 export async function sendCentralRequestNotification(
   input: CentralRequestNotificationInput,
 ) {
@@ -358,6 +584,11 @@ export async function sendCentralRequestNotification(
     );
   const monthlyCountLines =
     monthlyRequestCountLines(monthlyCounts);
+
+  const attachmentUrl =
+    await resolveCentralAttachmentUrl(
+      input,
+    );
 
   const elements: any[] = [
     {
@@ -397,7 +628,9 @@ export async function sendCentralRequestNotification(
       tag: "div",
       text: {
         tag: "lark_md",
-        content: `**Attachment${input.attachmentName ? ` — ${input.attachmentName}` : ""}**`,
+        content:
+          `**Attachment**\n` +
+          attachmentLabel(input, attachmentUrl),
       },
     });
 
@@ -416,7 +649,9 @@ export async function sendCentralRequestNotification(
       tag: "div",
       text: {
         tag: "lark_md",
-        content: `**Attachment**\n${input.attachmentName}`,
+        content:
+          `**Attachment**\n` +
+          attachmentLabel(input, attachmentUrl),
       },
     });
   }
