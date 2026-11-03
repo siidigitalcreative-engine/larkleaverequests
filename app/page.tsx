@@ -73,40 +73,6 @@ function mobileDisplay(value: string) {
     .join(" ");
 }
 
-function ymdLocal(date: Date) {
-  const year = date.getFullYear();
-  const month = String(
-    date.getMonth() + 1,
-  ).padStart(2, "0");
-  const day = String(
-    date.getDate(),
-  ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-function currentWeekBounds() {
-  const today = new Date();
-  const day = today.getDay();
-  const daysSinceMonday =
-    (day + 6) % 7;
-
-  const monday = new Date(today);
-  monday.setDate(
-    today.getDate() - daysSinceMonday,
-  );
-
-  const sunday = new Date(monday);
-  sunday.setDate(
-    monday.getDate() + 6,
-  );
-
-  return {
-    start: ymdLocal(monday),
-    end: ymdLocal(sunday),
-  };
-}
-
 function historyDate(value?: number) {
   if (!value) return "—";
 
@@ -512,13 +478,6 @@ export default function Home() {
     historyCommentFileKey,
     setHistoryCommentFileKey,
   ] = useState(0);
-
-  const week =
-    useMemo(
-      () =>
-        currentWeekBounds(),
-      [],
-    );
 
   useEffect(() => {
     Promise.all([
@@ -1168,13 +1127,11 @@ export default function Home() {
 
     try {
       if (
-        requestedNewOffDate <
-          week.start ||
-        requestedNewOffDate >
-          week.end
+        currentOffDate ===
+        requestedNewOffDate
       ) {
         throw new Error(
-          `Requested New Off-Date must be within this week (${week.start} to ${week.end}).`,
+          "Current and requested new off-date cannot be the same.",
         );
       }
 
@@ -1791,8 +1748,8 @@ export default function Home() {
                     >
                       Request a
                       different off-date
-                      for the current
-                      week.
+                      from your current
+                      off-date.
                     </span>
                   </span>
                 </button>
@@ -3059,9 +3016,9 @@ export default function Home() {
                   </h2>
 
                   <p className="muted">
-                    Requested new
-                    off-date must be
-                    within this week.
+                    Request a different
+                    off-date from your
+                    current off-date.
                   </p>
                 </div>
 
@@ -3234,17 +3191,6 @@ export default function Home() {
                       />
                     </div>
 
-                    <div
-                      className="small"
-                      style={{
-                        marginTop: 5,
-                      }}
-                    >
-                      For this week
-                      only:{" "}
-                      {week.start} to{" "}
-                      {week.end}
-                    </div>
                   </label>
                 </div>
 
