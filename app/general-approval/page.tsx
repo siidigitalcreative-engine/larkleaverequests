@@ -627,87 +627,56 @@ export default function GeneralApprovalPage() {
                 Request Title *
               </span>
               <input
-
                 className="input"
+                type="text"
+                value={requestTitle}
+                onChange={(event) =>
+                  setRequestTitle(
+                    event.target.value,
+                  )
+                }
+                placeholder="Enter a short title for this request"
+                minLength={3}
+                maxLength={200}
+                required
+              />
+            </label>
 
-                type="file"
+            <label className="field">
+              <span className="label">
+                Request Details *
+              </span>
+              <textarea
+                className="textarea"
+                value={requestDetails}
+                onChange={(event) =>
+                  setRequestDetails(
+                    event.target.value,
+                  )
+                }
+                placeholder="Describe what you are requesting and why approval is needed"
+                minLength={3}
+                maxLength={4000}
+                required
+              />
+            </label>
 
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-
-                disabled={busy || attachmentUploading}
-
-                onChange={(
-
-                  event,
-
-                ) => {
-
-                  const file =
-
-                    event.target
-
-                      .files?.[0] ||
-
-                    null;
-
-
-                  setAttachment(file);
-
-                  setUploadedBlobPathname("");
-
-                  setUploadedAttachmentName("");
-
-                  setUploadedAttachmentType("");
-
-                  setUploadProgress(0);
-
-
-                  if (!file) {
-
-                    setStatus("");
-
-                    return;
-
-                  }
-
-
-                  if (
-
-                    file.size >
-
-                      30 *
-
-                        1024 *
-
-                        1024
-
-                  ) {
-
-                    setAttachment(null);
-
-                    event.currentTarget.value = "";
-
-                    setStatus(
-
-                      "Attachment must be 30 MB or smaller.",
-
-                    );
-
-                    setStatusKind("error");
-
-                    return;
-
-                  }
-
-
-                  void uploadAttachmentNow(
-
-                    file,
-
-                  );
-
-                }}
-
+            <label className="field">
+              <span className="label">
+                Amount / Budget
+              </span>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={amountBudget}
+                onChange={(event) =>
+                  setAmountBudget(
+                    event.target.value,
+                  )
+                }
+                placeholder="Optional"
               />
               <div
                 className="small"
@@ -715,10 +684,60 @@ export default function GeneralApprovalPage() {
                   marginTop: 5,
                 }}
               >
-                Optional. Image, PDF,
-                Word, Excel,
-                PowerPoint, or text
-                file. Maximum 30 MB.
+                Optional. Enter the requested amount or budget, if applicable.
+              </div>
+            </label>
+
+            <label className="field">
+              <span className="label">
+                Attachment
+              </span>
+              <input
+                className="input"
+                type="file"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                disabled={busy || attachmentUploading}
+                onChange={(event) => {
+                  const file =
+                    event.target.files?.[0] ||
+                    null;
+
+                  setAttachment(file);
+                  setUploadedBlobPathname("");
+                  setUploadedAttachmentName("");
+                  setUploadedAttachmentType("");
+                  setUploadProgress(0);
+
+                  if (!file) {
+                    setStatus("");
+                    return;
+                  }
+
+                  if (
+                    file.size >
+                    30 * 1024 * 1024
+                  ) {
+                    setAttachment(null);
+                    event.currentTarget.value = "";
+                    setStatus(
+                      "Attachment must be 30 MB or smaller.",
+                    );
+                    setStatusKind("error");
+                    return;
+                  }
+
+                  void uploadAttachmentNow(
+                    file,
+                  );
+                }}
+              />
+              <div
+                className="small"
+                style={{
+                  marginTop: 5,
+                }}
+              >
+                Optional. Image, PDF, Word, Excel, PowerPoint, or text file. Maximum 30 MB.
               </div>
             </label>
 
