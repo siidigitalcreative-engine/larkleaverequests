@@ -1048,6 +1048,7 @@ export async function sendOvertimeDecisionCard(input: {
 }
 
 export type OvertimeHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType: "Overtime";
   title: string;
@@ -1084,6 +1085,7 @@ export async function listEmployeeOvertimeHistory(
       const compensation = text(f["Compensation Method"]);
 
       results.push({
+        recordId: String(record?.record_id ?? ""),
         requestId:
           text(f["Overtime Request ID"]) ||
           text(f["Request ID"]),
