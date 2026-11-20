@@ -711,6 +711,7 @@ export async function createApprovalGroupRecord(
 
 
 export type ApprovalHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType: "Leave Request" | "Change Day-Off";
   title: string;
@@ -755,6 +756,7 @@ export async function listEmployeeApprovalHistory(
       const dayType = String(f["Day Type"] ?? "").trim();
 
       results.push({
+        recordId: String(item?.record_id ?? ""),
         requestId: String(
           f["Leave Request ID"] ?? f["Request ID"] ?? "",
         ).trim(),
@@ -790,6 +792,7 @@ export async function listEmployeeApprovalHistory(
         }
 
         results.push({
+          recordId: String(item?.record_id ?? ""),
           requestId: String(
             f["Change Off Request ID"] ?? f["Request ID"] ?? "",
           ).trim(),
