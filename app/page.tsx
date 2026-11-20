@@ -29,6 +29,7 @@ type RequestType =
   | "history";
 
 type ApprovalHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType:
     | "Leave Request"
@@ -51,6 +52,7 @@ type ApprovalHistoryItem = {
   requestedOffsetDate?: number;
   rejectionReason?: string;
   approvalComment?: string;
+  viewUrl?: string;
 };
 
 type HistoryFilter =
@@ -437,6 +439,11 @@ export default function Home() {
   ] = useState("");
 
   const [
+    historyLinkStatus,
+    setHistoryLinkStatus,
+  ] = useState("");
+
+  const [
     historyCommentTarget,
     setHistoryCommentTarget,
   ] = useState("");
@@ -673,6 +680,37 @@ export default function Home() {
     item: ApprovalHistoryItem,
   ) {
     return `${item.requestType}::${item.requestId}`;
+  }
+
+  async function copyRequestLink(
+    item: ApprovalHistoryItem,
+  ) {
+    setHistoryLinkStatus("");
+
+    if (!item.viewUrl) {
+      setHistoryLinkStatus(
+        "This request does not have a shareable link yet.",
+      );
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        item.viewUrl,
+      );
+      setHistoryLinkStatus(
+        "Request link copied.",
+      );
+      window.setTimeout(
+        () => setHistoryLinkStatus(""),
+        2200,
+      );
+    } catch {
+      window.prompt(
+        "Copy this request link:",
+        item.viewUrl,
+      );
+    }
   }
 
   async function openHistoryComment(
@@ -966,6 +1004,7 @@ export default function Home() {
     setHistoryItems([]);
     setHistoryFilter("All");
     setHistoryError("");
+    setHistoryLinkStatus("");
     setHistoryCommentTarget(
       "",
     );
@@ -2163,6 +2202,15 @@ export default function Home() {
 
               <div className="divider" />
 
+              {historyLinkStatus && (
+                <div
+                  className="status success"
+                  style={{ marginBottom: 12 }}
+                >
+                  {historyLinkStatus}
+                </div>
+              )}
+
               {historyLoading &&
               historyItems.length ===
                 0 ? (
@@ -2197,8 +2245,25 @@ export default function Home() {
                       <div
                         key={`${item.requestType}-${item.requestId}`}
                         className="employeeBox"
+                        role={item.viewUrl ? "link" : undefined}
+                        tabIndex={item.viewUrl ? 0 : undefined}
+                        onClick={() => {
+                          if (item.viewUrl) {
+                            window.open(item.viewUrl, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            item.viewUrl &&
+                            (event.key === "Enter" || event.key === " ")
+                          ) {
+                            event.preventDefault();
+                            window.open(item.viewUrl, "_blank", "noopener,noreferrer");
+                          }
+                        }}
                         style={{
                           margin: 0,
+                          cursor: item.viewUrl ? "pointer" : "default",
                         }}
                       >
                         <div className="between">
@@ -2309,8 +2374,42 @@ export default function Home() {
                             marginTop: 12,
                             justifyContent:
                               "flex-start",
+                            flexWrap: "wrap",
                           }}
+                          onClick={(event) =>
+                            event.stopPropagation()
+                          }
                         >
+                          {item.viewUrl && (
+                            <>
+                              <button
+                                className="btn btnPrimary"
+                                type="button"
+                                onClick={() =>
+                                  window.open(
+                                    item.viewUrl,
+                                    "_blank",
+                                    "noopener,noreferrer",
+                                  )
+                                }
+                              >
+                                Open Request
+                              </button>
+
+                              <button
+                                className="btn btnGhost"
+                                type="button"
+                                onClick={() =>
+                                  void copyRequestLink(
+                                    item,
+                                  )
+                                }
+                              >
+                                Copy Link
+                              </button>
+                            </>
+                          )}
+
                           <button
                             className="btn btnGhost"
                             type="button"
@@ -2334,6 +2433,9 @@ export default function Home() {
                             item,
                           ) && (
                           <div
+                            onClick={(event) =>
+                              event.stopPropagation()
+                            }
                             style={{
                               marginTop: 12,
                               padding: 14,
