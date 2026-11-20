@@ -614,6 +614,7 @@ export async function sendExtraApprovalDecisionCard(input: {
 }
 
 export type GeneralApprovalHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType: "General Approval";
   title: string;
@@ -634,6 +635,7 @@ export async function listEmployeeGeneralApprovalHistory(employeeId: string): Pr
       const f = record?.fields ?? {};
       if (text(f["Employee ID"]) !== normalized) continue;
       results.push({
+        recordId: String(record?.record_id ?? ""),
         requestId: text(f["General Approval Request ID"]) || text(f["Request ID"]),
         requestType: "General Approval",
         title: text(f["Request Title"]) || "General Approval",
@@ -652,6 +654,7 @@ export async function listEmployeeGeneralApprovalHistory(employeeId: string): Pr
 }
 
 export type OffsetApprovalHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType: "Offset Approval";
   title: string;
@@ -676,6 +679,7 @@ export async function listEmployeeOffsetApprovalHistory(employeeId: string): Pro
       const hoursWorked = Number(f["Hours Worked"] ?? 0) || 0;
       const workType = text(f["Work Type"]);
       results.push({
+        recordId: String(record?.record_id ?? ""),
         requestId: text(f["Offset Request ID"]) || text(f["Request ID"]),
         requestType: "Offset Approval",
         title: "Offset Approval",
