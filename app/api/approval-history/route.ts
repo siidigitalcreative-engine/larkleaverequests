@@ -7,6 +7,7 @@ import {
   listEmployeeGeneralApprovalHistory,
   listEmployeeOffsetApprovalHistory,
 } from "@/lib/general-offset-approvals";
+import { makeReviewToken } from "@/lib/reviewToken";
 import {
   SESSION_COOKIE_NAME,
   verifySessionToken,
@@ -41,17 +42,47 @@ export async function GET() {
       listEmployeeOffsetApprovalHistory(session.employeeId),
     ]);
 
+    const slugForType = (requestType: string) => {
+      if (requestType === "Leave Request") return "leave";
+      if (requestType === "Change Day-Off") return "change-day-off";
+      if (requestType === "Overtime") return "overtime";
+      if (requestType === "Undertime") return "undertime";
+      if (requestType === "General Approval") return "general-approval";
+      return "offset-approval";
+    };
+
+    const baseUrl = String(process.env.APP_PUBLIC_URL || "").replace(/\/$/, "");
+
     const items = [
       ...existingItems,
       ...overtimeItems,
       ...undertimeItems,
       ...generalApprovalItems,
       ...offsetApprovalItems,
-    ].sort(
-      (a, b) =>
-        Number(b.submittedAt || 0) -
-        Number(a.submittedAt || 0),
-    );
+    ]
+      .map((item) => {
+        const slug = slugForType(item.requestType);
+        const recordId = String(item.recordId || "").trim();
+
+        if (!recordId) {
+          return { ...item, viewUrl: "" };
+        }
+
+        const token = makeReviewToken(`request-view:${slug}:${recordId}`);
+        const relativeUrl =
+          `/request/${encodeURIComponent(slug)}/${encodeURIComponent(recordId)}` +
+          `?token=${encodeURIComponent(token)}`;
+
+        return {
+          ...item,
+          viewUrl: baseUrl ? `${baseUrl}${relativeUrl}` : relativeUrl,
+        };
+      })
+      .sort(
+        (a, b) =>
+          Number(b.submittedAt || 0) -
+          Number(a.submittedAt || 0),
+      );
 
     return NextResponse.json({ items });
   } catch (error) {
