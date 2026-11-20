@@ -1125,6 +1125,7 @@ export async function updateUndertimeApprovalGroupDecision(
 }
 
 export type UndertimeHistoryItem = {
+  recordId: string;
   requestId: string;
   requestType: "Undertime";
   title: string;
@@ -1194,6 +1195,7 @@ export async function listEmployeeUndertimeHistory(
             ) || 0;
 
       results.push({
+        recordId: String(record?.record_id ?? ""),
         requestId:
           text(
             f[
